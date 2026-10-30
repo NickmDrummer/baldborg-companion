@@ -25,8 +25,11 @@ const DEFAULTS = {
   maxMinutes: 45,
   silentHours: [23, 8],
   dailyCap: 6,
-  speak: false,
+  speak: true,
+  language: "es",
 };
+
+const LANGUAGES = new Set(["es", "en", "auto"]);
 
 function config() {
   try {
@@ -53,6 +56,8 @@ function loadState() {
       lastInteraction: 0,
       scores: {},
       pending: null,
+      beatLanguage: null,
+      lastLanguage: null,
       ...JSON.parse(readFileSync(STATE_FILE, "utf8")),
     };
   } catch {
@@ -108,7 +113,7 @@ function nextReminder() {
       .sort((a, b) => a.when - b.when);
     if (!upcoming.length) return null;
     return {
-      time: new Date(upcoming[0].when).toLocaleTimeString("es-MX", {
+      time: new Date(upcoming[0].when).toLocaleTimeString(state.lastLanguage === "en" ? "en-US" : "es-MX", {
         hour: "2-digit",
         minute: "2-digit",
       }),
@@ -120,7 +125,29 @@ function nextReminder() {
   }
 }
 
-function buildContext() {
+/** Resolved beat language: explicit setting, "auto" follows the last message. */
+export function resolveLanguage() {
+  const setting = state.beatLanguage ?? config().language ?? "es";
+  if (setting === "auto") return state.lastLanguage === "en" ? "en" : "es";
+  return setting === "en" ? "en" : "es";
+}
+
+export function setLanguage(code) {
+  if (!LANGUAGES.has(code)) return null;
+  state.beatLanguage = code;
+  saveState();
+  return resolveLanguage();
+}
+
+/** Remember the language the client last wrote in, for "auto". */
+export function noteLanguage(code) {
+  const normalised = code === "en" ? "en" : "es";
+  if (state.lastLanguage === normalised) return;
+  state.lastLanguage = normalised;
+  saveState();
+}
+
+function buildContext(language) {
   const now = new Date();
   const weather = lastWeather();
   const match = lastMatch();
@@ -133,6 +160,7 @@ function buildContext() {
     uptimeDays: uptime() / 86400,
     sessionHours: (now.getTime() - startedAt) / 3_600_000,
     hoursSinceInteraction: (now.getTime() - (state.lastInteraction || startedAt)) / 3_600_000,
+    locale: language === "en" ? "en-US" : "es-MX",
     nextReminder: reminder && reminder.inMinutes <= 45 ? reminder : null,
     weather:
       weather && now.getTime() - weather.at < 2 * 3_600_000
@@ -208,11 +236,12 @@ function fire() {
   // The previous beat was not answered: let it lose weight.
   resolvePending(false);
 
-  const ctx = buildContext();
+  const language = resolveLanguage();
+  const ctx = buildContext(language);
   const beat = pickBeat(ctx);
   if (!beat) return null;
 
-  const text = beat.text(ctx);
+  const text = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
   state.lastFired[beat.id] = Date.now();
   state.pending = { id: beat.id, at: Date.now() };
   state.count += 1;
@@ -269,7 +298,8 @@ export function noteInteraction() {
 export function forceBeat() {
   resolvePending(false);
 
-  const ctx = buildContext();
+  const language = resolveLanguage();
+  const ctx = buildContext(language);
   const now = Date.now();
   const byCondition = BEATS.filter((beat) => beat.when(ctx));
   const pool = byCondition.length
@@ -279,7 +309,7 @@ export function forceBeat() {
   const beat = pool[Math.floor(Math.random() * pool.length)];
   if (!beat) return null;
 
-  const text = beat.text(ctx);
+  const text = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
   state.lastFired[beat.id] = now;
   state.pending = { id: beat.id, at: now };
   state.count += 1;

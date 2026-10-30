@@ -18,9 +18,11 @@ import { join } from "node:path";
 
 const SOCKET = join(homedir(), ".config", "baldborg", "control.sock");
 const [command, ...rest] = process.argv.slice(2);
-const payload = command === "announce" ? `announce ${rest.join(" ").trim()}` : command;
+const payload = ["announce", "language"].includes(command)
+  ? `${command} ${rest.join(" ").trim()}`
+  : command;
 
-const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "theme", "announce", "status", "show", "hide", "quit", "capture"]);
+const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "theme", "announce", "language", "status", "show", "hide", "quit", "capture"]);
 
 if (!command || !VALID.has(command)) {
   console.error(`usage: baldborg <${[...VALID].join("|")}>`);

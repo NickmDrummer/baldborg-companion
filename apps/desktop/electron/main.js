@@ -21,8 +21,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
-import { forceBeat, noteInteraction, startBeats, stopBeats } from "./beats.js";
-import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
+import { forceBeat, noteInteraction, noteLanguage, setLanguage, startBeats, stopBeats } from "./beats.js";
+import { autoSpeakEnabled, detectLanguage, stopVoice, synthesize, voiceStatus } from "./voice.js";
 import { loadUserTools } from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -578,6 +578,11 @@ function handleCommand(raw) {
         });
       }
       break;
+    case "language": {
+      const resolved = setLanguage(argument);
+      if (resolved) console.info(`[baldborg] beats language -> ${argument} (${resolved})`);
+      break;
+    }
     case "theme": {
       const accent = currentThemeAccent();
       if (accent) {
@@ -676,6 +681,7 @@ function registerIpc() {
   ipcMain.handle("brain:chat", (_event, text) => {
     if (typeof text !== "string" || !text.trim()) return;
     noteInteraction();
+    noteLanguage(detectLanguage(text));
     startChat(text.trim(), (event) => {
       if (event.type === "done" && event.mood) lastMood = event.mood;
       win?.webContents.send("brain:event", event);

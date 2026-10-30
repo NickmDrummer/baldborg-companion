@@ -65,6 +65,7 @@
       8
     ],
     "dailyCap": 6,
-    "speak": true
+    "speak": true,
+    "language": "es"
   }
 }
