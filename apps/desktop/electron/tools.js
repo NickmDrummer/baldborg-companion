@@ -7,10 +7,10 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, loadavg, totalmem, freemem, uptime } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
@@ -169,6 +169,56 @@ export const TOOL_DEFINITIONS = [
     },
   },
 ];
+
+/* ------------------------------------------------------------- user tools -- */
+
+// Tools dropped into ~/.config/baldborg/tools/*.mjs are loaded on startup and
+// merged with the built-ins. They run with full local privileges: only install
+// tools you trust.
+let userTools = [];
+
+export async function loadUserTools() {
+  const dir = join(STATE_DIR, "tools");
+  if (!existsSync(dir)) return [];
+
+  const builtin = new Set(TOOL_DEFINITIONS.map((tool) => tool.function.name));
+  const loaded = [];
+
+  for (const file of readdirSync(dir).filter((name) => name.endsWith(".mjs"))) {
+    try {
+      const module = await import(pathToFileURL(join(dir, file)).href);
+      const def = module.default ?? module.tool;
+      if (!def?.name || !def?.description || !def?.parameters || typeof def.run !== "function") {
+        console.warn(`[baldborg] tool ${file}: incomplete definition, skipped`);
+        continue;
+      }
+      if (builtin.has(def.name)) {
+        console.warn(`[baldborg] tool ${file}: "${def.name}" collides with a built-in, skipped`);
+        continue;
+      }
+      loaded.push(def);
+    } catch (error) {
+      console.warn(`[baldborg] tool ${file} failed to load: ${error.message}`);
+    }
+  }
+
+  userTools = loaded;
+  console.info(
+    `[baldborg] user tools: ${userTools.length ? userTools.map((tool) => tool.name).join(", ") : "none"}`,
+  );
+  return userTools;
+}
+
+/** Built-in schemas plus any user tools. */
+export function toolDefinitions() {
+  return [
+    ...TOOL_DEFINITIONS,
+    ...userTools.map((tool) => ({
+      type: "function",
+      function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+    })),
+  ];
+}
 
 /* ---------------------------------------------------------------- weather -- */
 
@@ -413,6 +463,15 @@ export function prepareTool(name, rawArgs) {
     } catch {
       args = {};
     }
+  }
+
+  const userTool = userTools.find((tool) => tool.name === name);
+  if (userTool) {
+    if (typeof userTool.prepare === "function") return userTool.prepare(args);
+    return {
+      summary: userTool.description,
+      run: async () => userTool.run(args),
+    };
   }
 
   switch (name) {

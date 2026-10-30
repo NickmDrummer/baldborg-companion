@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
-import { prepareTool, TOOL_DEFINITIONS, toolsEnabled } from "./tools.js";
+import { prepareTool, toolDefinitions, toolsEnabled } from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
@@ -116,7 +116,7 @@ export async function warmup(onState) {
           { role: "system", content: clockContext() },
           { role: "user", content: "ping" },
         ],
-        ...(toolsEnabled() ? { tools: TOOL_DEFINITIONS } : {}),
+        ...(toolsEnabled() ? { tools: toolDefinitions() } : {}),
         options: { num_predict: 1, num_ctx: config.numCtx },
       }),
     });
@@ -179,7 +179,7 @@ async function chatRound(messages, model, sink) {
       messages,
       stream: true,
       keep_alive: config.keepAlive,
-      ...(toolsEnabled() ? { tools: TOOL_DEFINITIONS } : {}),
+      ...(toolsEnabled() ? { tools: toolDefinitions() } : {}),
       options: {
         temperature: config.temperature,
         num_ctx: config.numCtx,

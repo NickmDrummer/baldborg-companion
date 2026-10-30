@@ -46,6 +46,17 @@ if [[ -d "$HOME/.config/omarchy" ]]; then
   install_hook battery-low "$REPO/config/omarchy/battery-low.sh" baldborg-battery.sh
 fi
 
+# User tools directory with a documented example.
+TOOLS_DIR="$HOME/.config/baldborg/tools"
+if [[ -d "$HOME/.config/baldborg" || -d "$HOME/.config" ]]; then
+  mkdir -p "$TOOLS_DIR"
+  cp "$REPO/config/tools/README.md" "$TOOLS_DIR/README.md"
+  if [[ ! -f "$TOOLS_DIR/example-disk.mjs" ]]; then
+    cp "$REPO/config/tools/example-disk.mjs" "$TOOLS_DIR/example-disk.mjs"
+    echo "installed example user tool"
+  fi
+fi
+
 # Omarchy bar widget.
 PLUGIN_ID="nickmdrummer.baldborg"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"

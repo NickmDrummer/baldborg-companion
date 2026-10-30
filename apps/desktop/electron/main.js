@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
 import { forceBeat, noteInteraction, startBeats, stopBeats } from "./beats.js";
 import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
+import { loadUserTools } from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -719,6 +720,8 @@ if (!gotLock) {
       lastLocked = locked;
       win?.webContents.send("session:locked", locked);
     }, 10_000);
+
+    void loadUserTools();
 
     // Warm the model and its prompt cache while the overlay boots.
     setTimeout(
