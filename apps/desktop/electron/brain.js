@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
-import { prepareTool, toolDefinitions, toolsEnabled } from "./tools.js";
+import { listPendingReminders, prepareTool, toolDefinitions, toolsEnabled } from "./tools.js";
 import { detectLanguage } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -226,6 +226,53 @@ function routeReminder(raw) {
   return { text, minutes, at, language: detectLanguage(raw) };
 }
 
+/** Questions about pending reminders are answered from the store, not the model. */
+function routeReminderQuery(raw) {
+  if (!/(recordatorio|reminder)/i.test(raw)) return null;
+  if (/(recu[eé]rdame|recordarme|remind me|set(?:e)? (?:me )?a reminder|create a reminder)/i.test(raw)) {
+    return null;
+  }
+  if (/\ben\s+\d|a\s+las?\s+\d|at\s+\d|in\s+\d/i.test(raw)) return null;
+  if (!/(pendiente|tengo|hay|cu[aá]l|lista|pending|have|list|any|qu[eé])/i.test(raw)) return null;
+  return { language: detectLanguage(raw) };
+}
+
+async function runReminderQuery(route, sink, userText) {
+  const pending = listPendingReminders();
+  const english = route.language === "en";
+  const locale = english ? "en-US" : "es-MX";
+
+  let text;
+  if (!pending.length) {
+    text = english
+      ? "[[mood:neutral]] No pending reminders, sir. Your external memory is currently idle."
+      : "[[mood:neutral]] No hay recordatorios pendientes, señor. Su memoria externa está ociosa.";
+  } else {
+    const items = pending.slice(0, 5).map((entry) => {
+      const when = new Date(entry.at).toLocaleString(locale, {
+        weekday: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      return `${entry.text} (${when})`;
+    });
+    const plural = pending.length > 1;
+    text = english
+      ? `[[mood:neutral]] You have ${pending.length} pending reminder${plural ? "s" : ""}: ${items.join(", ")}.`
+      : `[[mood:neutral]] Tiene ${pending.length} recordatorio${plural ? "s" : ""} pendiente${plural ? "s" : ""}: ${items.join(", ")}.`;
+  }
+
+  const parsed = parseMood(text);
+  history = trimHistory([
+    ...history,
+    { role: "user", content: userText },
+    { role: "assistant", content: parsed.text },
+  ]);
+  saveHistory();
+  sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
+}
+
 async function runReminderRoute(route, sink, userText) {
   sink({ type: "tool", name: "set_reminder", status: "running" });
 
@@ -356,6 +403,14 @@ export async function startChat(text, sink, modelOverride) {
     const reminder = routeReminder(text);
     if (reminder) {
       await runReminderRoute(reminder, sink, text);
+      busy = false;
+      controller = null;
+      return;
+    }
+
+    const query = routeReminderQuery(text);
+    if (query) {
+      await runReminderQuery(query, sink, text);
       busy = false;
       controller = null;
       return;

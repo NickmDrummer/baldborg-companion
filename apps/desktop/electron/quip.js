@@ -55,7 +55,7 @@ export async function makeQuip(reminderText, language = "es") {
     const response = await fetch(`${host}/api/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      signal: AbortSignal.timeout(9_000),
+      signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({
         model,
         prompt,

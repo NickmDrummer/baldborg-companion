@@ -138,6 +138,15 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "list_reminders",
+      description:
+        "List the reminders that are still pending, with their times. Use it when the client asks what is pending or what you remember for them.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_time",
       description: "Current local date and time on the client's workstation.",
       parameters: { type: "object", properties: {}, required: [] },
@@ -312,6 +321,15 @@ function reminderEvent(reminder) {
   };
 }
 
+function markDone(id) {
+  const list = loadReminders();
+  const stored = list.find((entry) => entry.id === id);
+  if (!stored) return;
+  stored.done = true;
+  stored.firedAt = new Date().toISOString();
+  saveReminders(pruneReminders(list));
+}
+
 function scheduleInApp(reminder) {
   if (!reminderNotifier) return;
   const delay = new Date(reminder.at).getTime() - Date.now();
@@ -320,8 +338,7 @@ function scheduleInApp(reminder) {
     // Re-read: the quip may have arrived after the timer was armed.
     const current = loadReminders().find((entry) => entry.id === reminder.id) ?? reminder;
     reminderNotifier?.(reminderEvent(current));
-    const remaining = loadReminders().filter((entry) => entry.id !== reminder.id);
-    saveReminders(remaining);
+    markDone(reminder.id);
   }, delay);
 }
 
@@ -329,8 +346,20 @@ function scheduleInApp(reminder) {
 export function resumeReminders() {
   const reminders = loadReminders();
   const now = Date.now();
-  const pending = reminders.filter((entry) => new Date(entry.at).getTime() > now);
-  if (pending.length !== reminders.length) saveReminders(pending);
+  let changed = false;
+
+  for (const reminder of reminders) {
+    if (!reminder.done && new Date(reminder.at).getTime() <= now) {
+      reminder.done = true;
+      reminder.firedAt = new Date(reminder.at).toISOString();
+      changed = true;
+    }
+  }
+  if (changed) saveReminders(pruneReminders(reminders));
+
+  const pending = reminders.filter(
+    (entry) => !entry.done && new Date(entry.at).getTime() > now,
+  );
   for (const reminder of pending) scheduleInApp(reminder);
   if (pending.length) console.info(`[baldborg] ${pending.length} reminder(s) armed for voice`);
 }
@@ -342,6 +371,19 @@ function loadReminders() {
   } catch {
     return [];
   }
+}
+
+function pruneReminders(list) {
+  const cutoff = Date.now() - 7 * 24 * 3_600_000;
+  return list.filter((entry) => !entry.done || new Date(entry.at).getTime() > cutoff);
+}
+
+/** Pending reminders: not done and still in the future, oldest first. */
+export function listPendingReminders() {
+  const now = Date.now();
+  return loadReminders()
+    .filter((entry) => !entry.done && new Date(entry.at).getTime() > now)
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
 function saveReminders(list) {
@@ -610,6 +652,25 @@ export function prepareTool(name, rawArgs) {
     case "set_reminder":
       return prepareReminder(args);
 
+    case "list_reminders": {
+      const pending = listPendingReminders();
+      const locale = args.language === "en" ? "en-US" : "es-MX";
+      const items = pending.map((entry) => ({
+        text: entry.text,
+        at: new Date(entry.at).toLocaleString(locale, {
+          weekday: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }),
+      }));
+      const summary = items.length
+        ? items.map((item) => `${item.text} · ${item.at}`).join("; ")
+        : args.language === "en"
+          ? "No pending reminders."
+          : "No hay recordatorios pendientes.";
+      return { summary, run: async () => ({ ok: true, count: items.length, items, summary }) };
+    }
     case "get_time":
       return { summary: "Consultar la hora", run: async () => ({ ok: true, ...localTime() }) };
 
