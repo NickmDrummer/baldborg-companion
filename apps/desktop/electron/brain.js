@@ -88,9 +88,10 @@ let warmed = false;
  * the first request of a session costs ~15 s of prompt evaluation; doing it in
  * the background keeps the first real answer fast.
  */
-export async function warmup() {
+export async function warmup(onState) {
   if (warmed) return;
   warmed = true;
+  onState?.(true);
   try {
     await fetch(`${config.host}/api/chat`, {
       method: "POST",
@@ -112,6 +113,8 @@ export async function warmup() {
     console.info("[baldborg] prompt cache warmed");
   } catch (error) {
     console.warn("[baldborg] warmup failed:", error.message);
+  } finally {
+    onState?.(false);
   }
 }
 

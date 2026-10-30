@@ -39,6 +39,20 @@ body,
   pointer-events: auto;
 }
 
+/* Screen locked: the projection powers down. */
+.stage.locked .head {
+  opacity: 0.32;
+  filter: grayscale(0.6) drop-shadow(0 0 4px var(--glow));
+  transition: opacity 400ms ease, filter 400ms ease;
+}
+
+.stage.locked .console,
+.stage.locked .statusline,
+.stage.locked .beat {
+  opacity: 0.15;
+  transition: opacity 400ms ease;
+}
+
 /* --- placeholder head: replaced by the three.js avatar in phase 2 --- */
 
 .head {

@@ -37,6 +37,19 @@ const WM_CLASS = "baldborg-desktop";
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 
+function sessionLocked() {
+  const id = process.env.XDG_SESSION_ID;
+  if (!id) return null;
+  try {
+    const out = execFileSync("loginctl", ["show-session", id, "-p", "LockedHint"], {
+      timeout: 1500,
+    }).toString();
+    return out.includes("LockedHint=yes");
+  } catch {
+    return null;
+  }
+}
+
 /** Accent colour of the current Omarchy theme (colors.toml). */
 function currentThemeAccent() {
   try {
@@ -677,8 +690,20 @@ if (!gotLock) {
     // Give Hyprland time to map the surface before handing focus back.
     setTimeout(() => applyMode("passive"), 900);
 
+    // Dim the avatar while the session is locked.
+    let lastLocked = null;
+    setInterval(() => {
+      const locked = sessionLocked();
+      if (locked === null || locked === lastLocked) return;
+      lastLocked = locked;
+      win?.webContents.send("session:locked", locked);
+    }, 10_000);
+
     // Warm the model and its prompt cache while the overlay boots.
-    setTimeout(() => void warmup(), 2_500);
+    setTimeout(
+      () => void warmup((active) => win?.webContents.send("brain:warm", active)),
+      2_500,
+    );
 
     if (process.env.VITE_DEV_SERVER_URL) {
       win?.webContents.openDevTools({ mode: "detach" });

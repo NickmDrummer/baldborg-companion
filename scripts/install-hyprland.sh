@@ -43,6 +43,7 @@ if [[ -d "$HOME/.config/omarchy" ]]; then
   }
   install_hook theme-set "$REPO/config/omarchy/theme-set.sh" baldborg-theme.sh
   install_hook post-update "$REPO/config/omarchy/post-update.sh" baldborg-update.sh
+  install_hook battery-low "$REPO/config/omarchy/battery-low.sh" baldborg-battery.sh
 fi
 
 hyprctl reload >/dev/null

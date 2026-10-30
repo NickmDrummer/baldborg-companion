@@ -62,6 +62,8 @@ interface BaldborgApi {
   onGlitch: (callback: () => void) => () => void;
   onWindowFocus: (callback: () => void) => () => void;
   onAccent: (callback: (color: string) => void) => () => void;
+  onWarm: (callback: (active: boolean) => void) => () => void;
+  onLocked: (callback: (locked: boolean) => void) => () => void;
   onBeat: (callback: (beat: BeatEvent) => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
@@ -105,6 +107,8 @@ export default function App() {
   const [mood, setMood] = useState<Mood>("neutral");
   const [material, setMaterial] = useState<HeadMaterial>("normal");
   const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [warming, setWarming] = useState(false);
+  const [locked, setLocked] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ id: string; summary: string } | null>(null);
   const [beat, setBeat] = useState<{ text: string; mood: Mood } | null>(null);
   const beatTimer = useRef<number | null>(null);
@@ -173,6 +177,8 @@ export default function App() {
       if (modeRef.current === "interactive") inputRef.current?.focus();
     });
     const offAccent = api?.onAccent((color) => applyAccent(color));
+    const offWarm = api?.onWarm((active) => setWarming(active));
+    const offLocked = api?.onLocked((value) => setLocked(value));
 
     const offBeat = api?.onBeat((event) => {
       setBeat({ text: event.text, mood: event.mood });
@@ -276,6 +282,8 @@ export default function App() {
       offBeat?.();
       offWindowFocus?.();
       offAccent?.();
+      offWarm?.();
+      offLocked?.();
       offBrain?.();
     };
   }, []);
@@ -334,7 +342,7 @@ export default function App() {
   };
 
   return (
-    <div className={`stage ${mode}`}>
+    <div className={`stage ${mode}${locked ? " locked" : ""}`}>
       <div className="head" aria-hidden="true">
         <Avatar mood={mood} material={material} />
       </div>
@@ -345,7 +353,8 @@ export default function App() {
         ) : (
           <div className="statusline">
             <span className="dot" />
-            BALDBORG · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
+            BALDBORG ·{" "}
+            {muted ? "SILENCIADO" : busy ? "PROCESANDO" : warming ? "CALENTANDO" : "EN ESPERA"}
           </div>
         )
       ) : (
@@ -361,7 +370,9 @@ export default function App() {
                   ? activeTool
                     ? `CONSULTANDO ${TOOL_LABELS[activeTool] ?? activeTool.toUpperCase()}`
                     : "PROCESANDO"
-                  : "ENLACE ABIERTO"}
+                  : warming
+                    ? "CALENTANDO"
+                    : "ENLACE ABIERTO"}
             </span>
             <span className="hint">Esc</span>
           </div>

@@ -18,6 +18,7 @@ fi
 rm -f "$HYPR/baldborg.lua"
 rm -f "$HOME/.config/omarchy/hooks/theme-set.d/baldborg-theme.sh"
 rm -f "$HOME/.config/omarchy/hooks/post-update.d/baldborg-update.sh"
+rm -f "$HOME/.config/omarchy/hooks/battery-low.d/baldborg-battery.sh"
 hyprctl reload >/dev/null 2>&1 || true
 
 if [[ "${1:-}" == "--purge" ]]; then

@@ -23,6 +23,16 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("audio:muted", listener);
     return () => ipcRenderer.removeListener("audio:muted", listener);
   },
+  onLocked: (callback) => {
+    const listener = (_event, locked) => callback(locked);
+    ipcRenderer.on("session:locked", listener);
+    return () => ipcRenderer.removeListener("session:locked", listener);
+  },
+  onWarm: (callback) => {
+    const listener = (_event, active) => callback(active);
+    ipcRenderer.on("brain:warm", listener);
+    return () => ipcRenderer.removeListener("brain:warm", listener);
+  },
   onAccent: (callback) => {
     const listener = (_event, color) => callback(color);
     ipcRenderer.on("theme:accent", listener);
