@@ -270,6 +270,67 @@ async function weather(cityArg) {
 
 /* ------------------------------------------------------------- reminders -- */
 
+/* ------------------------------------------------- in-app reminder voice -- */
+
+let reminderNotifier = null;
+
+/** Main injects a function that shows a beat in the renderer. */
+export function setReminderNotifier(fn) {
+  reminderNotifier = fn;
+}
+
+const REMINDER_JOKES = {
+  es: [
+    "Su bandeja de entrada seguirá ahí; la mía, en cambio, nunca duerme.",
+    "Lo anoto con la misma esperanza con la que usted ignora estas notas.",
+    "Diez minutos de su atención: el precio habitual de tener memoria externa.",
+    "Cumplo mi parte. La suya empieza cuando suene.",
+    "Si llega tarde, lo registraré como una decisión consciente.",
+  ],
+  en: [
+    "Your inbox will still be there; mine never sleeps.",
+    "I note it with the same hope with which you ignore these notes.",
+    "Ten minutes of your attention: the usual price of external memory.",
+    "I do my part. Yours starts when it rings.",
+    "If you are late, I will log it as a conscious decision.",
+  ],
+};
+
+function reminderEvent(reminder) {
+  const language = reminder.language === "en" ? "en" : "es";
+  const jokes = REMINDER_JOKES[language];
+  const index = Math.abs([...reminder.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % jokes.length;
+  const prefix = language === "en" ? "Reminder" : "Recordatorio";
+  return {
+    type: "beat",
+    id: `reminder-${reminder.id}`,
+    text: `${prefix}: ${reminder.text}. ${jokes[index]}`,
+    mood: "wry",
+    speak: true,
+  };
+}
+
+function scheduleInApp(reminder) {
+  if (!reminderNotifier) return;
+  const delay = new Date(reminder.at).getTime() - Date.now();
+  if (delay <= 0) return;
+  setTimeout(() => {
+    reminderNotifier?.(reminderEvent(reminder));
+    const remaining = loadReminders().filter((entry) => entry.id !== reminder.id);
+    saveReminders(remaining);
+  }, delay);
+}
+
+/** Re-arm the in-app voices for reminders created in previous sessions. */
+export function resumeReminders() {
+  const reminders = loadReminders();
+  const now = Date.now();
+  const pending = reminders.filter((entry) => new Date(entry.at).getTime() > now);
+  if (pending.length !== reminders.length) saveReminders(pending);
+  for (const reminder of pending) scheduleInApp(reminder);
+  if (pending.length) console.info(`[baldborg] ${pending.length} reminder(s) armed for voice`);
+}
+
 function loadReminders() {
   try {
     const raw = JSON.parse(readFileSync(REMINDERS_FILE, "utf8"));
@@ -354,7 +415,13 @@ function prepareReminder(args) {
     summary: `${language === "en" ? "Reminder" : "Recordatorio"}: "${text}" · ${formatWhen(when, language)}`,
     async run() {
       const id = `r${Date.now().toString(36)}`;
-      const reminder = { id, text, at: when.toISOString(), created: new Date().toISOString() };
+      const reminder = {
+        id,
+        text,
+        at: when.toISOString(),
+        created: new Date().toISOString(),
+        language,
+      };
 
       const reminders = loadReminders().filter((entry) => new Date(entry.at) > new Date());
       reminders.push(reminder);
@@ -387,6 +454,8 @@ function prepareReminder(args) {
           run("notify-send", ["-u", "normal", "-a", "Baldborg", "Recordatorio", text]).catch(() => {});
         }, seconds * 1000);
       }
+
+      scheduleInApp(reminder);
 
       return { ok: true, scheduledFor: when.toISOString(), summary: formatWhen(when, language) };
     },

@@ -181,9 +181,20 @@ export default function App() {
     const offLocked = api?.onLocked((value) => setLocked(value));
 
     const offBeat = api?.onBeat((event) => {
-      setBeat({ text: event.text, mood: event.mood });
       setMood(event.mood);
       if (event.speak && !mutedRef.current) void speakText(event.text);
+
+      // With the chat open there is no bubble, so the line goes to the
+      // transcript; otherwise it floats under the head.
+      if (modeRef.current === "interactive") {
+        setEntries((current) => [
+          ...current,
+          { id: nextId++, role: "assistant", text: event.text },
+        ]);
+        return;
+      }
+
+      setBeat({ text: event.text, mood: event.mood });
       if (beatTimer.current) window.clearTimeout(beatTimer.current);
       beatTimer.current = window.setTimeout(() => setBeat(null), 20_000);
     });
