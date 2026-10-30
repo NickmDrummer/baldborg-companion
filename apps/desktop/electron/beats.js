@@ -306,7 +306,11 @@ export function forceBeat() {
     ? byCondition
     : BEATS.filter((beat) => ["checkin", "offer", "silence"].includes(beat.id));
 
-  const beat = pool[Math.floor(Math.random() * pool.length)];
+  // Rotate instead of rolling the dice: consecutive forces walk through the
+  // eligible beats instead of repeating the same one.
+  const beat = pool
+    .slice()
+    .sort((a, b) => (state.lastFired[a.id] ?? 0) - (state.lastFired[b.id] ?? 0))[0];
   if (!beat) return null;
 
   const text = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
