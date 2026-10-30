@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
 import { prepareTool, toolDefinitions, toolsEnabled } from "./tools.js";
+import { detectLanguage } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
@@ -86,7 +87,8 @@ function clockContext() {
   const day = now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
   return (
     `Runtime context: it is ${time} on ${day} on the client's workstation. ` +
-    "Weather, reminders, clock, workstation status and the client's football team are available through tools."
+    "Weather, reminders, clock, workstation status and the client's football team are available through tools. " +
+    "Do not repeat phrases or closings you have already used in this conversation."
   );
 }
 
@@ -304,7 +306,27 @@ export async function startChat(text, sink, modelOverride) {
         "¿Desea que lo intente por otra vía?";
     }
 
-    const parsed = parseMood(finalText);
+    let parsed = parseMood(finalText);
+
+    // Small models sometimes keep the language of the previous turn. One
+    // corrective round is cheap and deterministic.
+    const expected = detectLanguage(text);
+    if (detectLanguage(parsed.text) !== expected) {
+      console.info(`[baldborg] wrong language, retrying in ${expected}`);
+      sink({ type: "discard" });
+      messages.push({ role: "assistant", content: finalText });
+      messages.push({
+        role: "system",
+        content:
+          `That answer was in the wrong language. Reply again, only in ` +
+          `${expected === "es" ? "Spanish" : "English"}, ignoring the language of earlier turns.`,
+      });
+      const retry = await chatRound(messages, model, (event) => sink(event));
+      if (retry.text.trim()) {
+        finalText = retry.text;
+        parsed = parseMood(finalText);
+      }
+    }
     history = trimHistory([...history, userEntry, { role: "assistant", content: parsed.text }]);
     saveHistory();
 
