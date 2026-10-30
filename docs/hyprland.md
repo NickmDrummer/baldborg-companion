@@ -39,8 +39,8 @@ o.window("^delamain-desktop$", {
 })
 
 o.window("^delamain-desktop$", {
-  size = { 380, 300 },
-  move = { "(monitor_w-380-24)", "(monitor_h-300-24)" },
+  size = { 200, 270 },
+  move = { "(monitor_w-200-24)", "(monitor_h-270-24)" },
 })
 ```
 
@@ -57,6 +57,9 @@ floating windows, and keeping it separate guarantees it is evaluated after
 `float` is in effect. Expressions must be parenthesised, otherwise they are
 parsed as literal strings and silently ignored.
 
+`size` is only the initial geometry (passive mode). The app resizes its own
+surface: 200x270 for the head alone, 380x300 when the chat opens.
+
 ## Keybindings and why they do not use Electron
 
 Wayland forbids application-level global hotkeys, so Electron's
@@ -68,6 +71,35 @@ Available commands: `toggle`, `open`, `close`, `mute`, `show`, `hide`,
 `quit`, `capture` (writes `/tmp/opencode/delamain-capture.png`, useful for
 debugging the renderer).
 
+## Pointer warping
+
+This was the cause of the "cursor jumps back to the middle of the screen"
+bug: every time Hyprland changed focus it warped the pointer to the centre of
+the newly focused window. The overlay takes focus on hover (follow-mouse), the
+app hands focus back to the previous window, and the warp landed in the middle
+of that window.
+
+Hyprland exposes this as `cursor:no_warps`, which has no CLI keyword form in
+0.56 (the config uses non-legacy parsers), so the app disables it at startup
+and restores the previous value on quit:
+
+```sh
+hyprctl eval 'hl.config({ cursor = { no_warps = true } })'
+```
+
+While the companion runs, focus changes do not move the pointer. The toggle is
+not optional: the overlay hands focus back and forth on every hover, so with
+warping enabled the cursor would jump to the centre of the other window. If you
+ever need warping back, remove the `enableNoWarps()` call in
+`apps/desktop/electron/main.js`.
+
+## Resizing
+
+`hl.dsp.window.move` and `hl.dsp.window.resize` act on the **active** window,
+not on a selector, so the app focuses the overlay for a few milliseconds,
+resizes/moves it, and gives focus back when it is in passive mode. With
+`no_warps` enabled this dance is invisible.
+
 ## Verify
 
 ```sh
@@ -77,8 +109,17 @@ hyprctl clients -j | jq -r '.[] | select(.class | test("delamain")) | "\(.class)
 Expected:
 
 ```
-delamain-desktop at=[3436, 756] size=[380, 300] pinned=true
+delamain-desktop at=[1606, 756] size=[200, 270] pinned=true
 ```
+
+with the chat open:
+
+```
+delamain-desktop at=[1516, 756] size=[380, 300] pinned=true
+```
+
+The head keeps its centre and top edge between both states; only the surface
+grows to make room for the console.
 
 If the class differs, change `WM_CLASS` in `apps/desktop/electron/main.js`.
 If nothing matches, the window is running under XWayland; force native Wayland

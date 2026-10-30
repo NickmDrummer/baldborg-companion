@@ -29,6 +29,14 @@ app.commandLine.appendSwitch("force-device-scale-factor", "1");
 /** Hyprland window class; it comes from package.json "name". */
 const WM_CLASS = "delamain-desktop";
 
+/** Passive mode only needs the head; interactive mode adds the chat bar. */
+const SIZES = {
+  passive: { width: 200, height: 270 },
+  interactive: { width: 380, height: 300 },
+};
+/** Gap between the overlay and the monitor edge, in px. */
+const EDGE_MARGIN = 24;
+
 const STATE_DIR = join(homedir(), ".config", "delamain");
 const STATE_FILE = join(STATE_DIR, "state.json");
 const CONTROL_SOCKET = join(STATE_DIR, "control.sock");
@@ -72,6 +80,50 @@ function hyprDispatch(lua) {
   });
 }
 
+/** Run arbitrary Lua inside Hyprland (needed for config changes at runtime). */
+function hyprEval(code) {
+  return new Promise((resolve) => {
+    execFile("hyprctl", ["eval", code], (error) => resolve(!error));
+  });
+}
+
+/** Restore the previous cursor:no_warps value on quit. */
+let originalNoWarps = null;
+
+function cursorNoWarps() {
+  try {
+    const out = execFileSync("hyprctl", ["getoption", "cursor:no_warps"], { timeout: 1500 }).toString();
+    return out.includes("bool: true");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hyprland warps the pointer to the centre of a window whenever focus changes,
+ * which made the cursor jump while it crossed the overlay (every refocus after
+ * a hover did it). Disabling warps while the companion runs keeps the pointer
+ * where the user left it; the value is restored on quit.
+ */
+function enableNoWarps() {
+  originalNoWarps = cursorNoWarps();
+  if (originalNoWarps === true) return;
+  hyprEval("hl.config({ cursor = { no_warps = true } })");
+}
+
+function restoreNoWarps() {
+  if (originalNoWarps !== false) return;
+  // Synchronous: the process exits right after will-quit, an async child would
+  // be killed before Hyprland applies the change.
+  try {
+    execFileSync("hyprctl", ["eval", "hl.config({ cursor = { no_warps = false } })"], {
+      timeout: 1500,
+    });
+  } catch {
+    console.warn("[delamain] could not restore cursor:no_warps");
+  }
+}
+
 function activeWindowAddress() {
   try {
     const active = JSON.parse(execFileSync("hyprctl", ["activewindow", "-j"], { timeout: 1500 }));
@@ -107,6 +159,28 @@ function hyprlandMonitors() {
 }
 
 /**
+ * Hyprland's `clients[].monitor` field does not reliably match the geometry,
+ * so the monitor is resolved by hit-testing the window centre instead.
+ */
+function monitorForClient(client) {
+  const monitors = hyprlandMonitors();
+  if (!client?.at) return monitors[0] ?? null;
+  const centerX = client.at[0] + client.size[0] / 2;
+  const centerY = client.at[1] + client.size[1] / 2;
+  return (
+    monitors.find(
+      (monitor) =>
+        centerX >= monitor.x &&
+        centerX < monitor.x + monitor.width &&
+        centerY >= monitor.y &&
+        centerY < monitor.y + monitor.height,
+    ) ??
+    monitors[0] ??
+    null
+  );
+}
+
+/**
  * Hyprland applies the `move` window rule unreliably on this setup, so the
  * app re-checks its own position and asks the compositor to move it when it
  * does not match the expected bottom-right corner.
@@ -114,30 +188,78 @@ function hyprlandMonitors() {
 function ensurePlacement() {
   const client = hyprlandClient();
   if (!client?.at) return;
-  const monitor = hyprlandMonitors().find((entry) => entry.id === client.monitor);
+  const monitor = monitorForClient(client);
   if (!monitor) return;
 
-  const localX = monitor.width - 380 - 24;
-  const localY = monitor.height - 300 - 24;
+  const localX = monitor.width - client.size[0] - EDGE_MARGIN;
+  const localY = monitor.height - client.size[1] - EDGE_MARGIN;
   const globalX = monitor.x + localX;
   const globalY = monitor.y + localY;
 
   if (Math.abs(client.at[0] - globalX) < 8 && Math.abs(client.at[1] - globalY) < 8) return;
-  hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`);
+
+  focusOverlay()
+    .then(() => hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`))
+    .then(() => {
+      if (mode === "passive") focusWindow(previousFocus);
+    });
+}
+
+/** Hyprland's move/resize dispatchers target the active window, so focus first. */
+function focusOverlay() {
+  return hyprDispatch(`hl.dsp.focus({ window = "class:${WM_CLASS}" })`);
+}
+
+/**
+ * Resize the surface for the current mode while keeping the head visually
+ * still: the horizontal centre and the top edge stay put, and the chat bar
+ * grows out of the bottom of the window.
+ */
+async function applyWindowGeometry(next) {
+  const size = SIZES[next] ?? SIZES.passive;
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+
+  // Ask Chromium too, for compositors that honour client resize requests.
+  win?.setSize(size.width, size.height);
+
+  await focusOverlay();
+  await hyprDispatch(`hl.dsp.window.resize({ x = ${size.width}, y = ${size.height} })`);
+
+  if (client?.at && monitor) {
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const headCenterX = client.at[0] + client.size[0] / 2;
+    const globalX = clamp(
+      Math.round(headCenterX - size.width / 2),
+      monitor.x + EDGE_MARGIN,
+      monitor.x + monitor.width - size.width - EDGE_MARGIN,
+    );
+    const globalY = clamp(
+      client.at[1],
+      monitor.y + EDGE_MARGIN,
+      monitor.y + monitor.height - size.height - EDGE_MARGIN,
+    );
+
+    await hyprDispatch(
+      `hl.dsp.window.move({ x = ${globalX - monitor.x}, y = ${globalY - monitor.y} })`,
+    );
+  }
+
+  if (mode === "passive") focusWindow(previousFocus);
 }
 
 /* ---------------------------------------------------------------- window -- */
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 380,
-    height: 300,
+    width: SIZES.passive.width,
+    height: SIZES.passive.height,
     show: false,
     frame: false,
     transparent: true,
     backgroundColor: "#00000000",
     hasShadow: false,
-    resizable: false,
+    resizable: true,
     movable: true,
     minimizable: false,
     maximizable: false,
@@ -219,6 +341,7 @@ function applyMode(next) {
 
   win.webContents.send("mode:changed", mode);
   updateTrayMenu();
+  applyWindowGeometry(mode);
 }
 
 function toggleMode() {
@@ -363,6 +486,9 @@ if (!gotLock) {
   app.on("second-instance", toggleMode);
 
   app.whenReady().then(() => {
+    // Hyprland warps the pointer on focus changes; keep it still.
+    enableNoWarps();
+
     // Captured before our window exists, so it is the real previous focus.
     previousFocus = activeWindowAddress();
 
@@ -380,7 +506,10 @@ if (!gotLock) {
     }
   });
 
-  app.on("will-quit", () => globalShortcut.unregisterAll());
+  app.on("will-quit", () => {
+    restoreNoWarps();
+    globalShortcut.unregisterAll();
+  });
   app.on("window-all-closed", () => app.quit());
   app.on("activate", () => {
     if (!win) createWindow();

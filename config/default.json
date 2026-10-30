@@ -24,7 +24,10 @@
     }
   },
   "avatar": {
-    "window": { "width": 380, "height": 300 },
+    "window": {
+      "passive": { "width": 200, "height": 270 },
+      "interactive": { "width": 380, "height": 300 }
+    },
     "headBox": { "width": 120, "height": 200 },
     "canvas": { "width": 200, "height": 220 },
     "glitchIntensity": 0.6,

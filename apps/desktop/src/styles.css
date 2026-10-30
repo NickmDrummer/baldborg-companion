@@ -126,13 +126,13 @@ body,
 .statusline {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
+  gap: 5px;
+  padding: 3px 7px;
   border-radius: 999px;
   border: 1px solid rgba(127, 214, 255, 0.18);
   background: rgba(3, 18, 26, 0.85);
-  font-size: 9px;
-  letter-spacing: 0.14em;
+  font-size: 8px;
+  letter-spacing: 0.1em;
   color: var(--holo-dim);
   text-transform: uppercase;
   animation: fade 180ms ease-out both;
