@@ -13,7 +13,11 @@ function hours(value) {
 }
 
 function clock(ctx) {
-  return ctx.now.toLocaleTimeString(ctx.locale, { hour: "2-digit", minute: "2-digit" });
+  return ctx.now.toLocaleTimeString(ctx.locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export const BEATS = [

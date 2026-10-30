@@ -83,7 +83,11 @@ function saveHistory() {
 
 function clockContext() {
   const now = new Date();
-  const time = now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  const time = now.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
   const day = now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
   return (
     `Runtime context: it is ${time} on ${day} on the client's workstation. ` +

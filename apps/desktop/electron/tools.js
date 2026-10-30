@@ -284,14 +284,47 @@ function saveReminders(list) {
   writeFileSync(REMINDERS_FILE, JSON.stringify(list, null, 2));
 }
 
+/** Parse "18:07", "6:07 pm", "6:07 p.m." or "18:07:00" as today's local time. */
+function parseClock(text) {
+  const match = text
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/i);
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const suffix = match[4]?.toLowerCase().replace(/\./g, "");
+
+  if (suffix === "pm" && hours < 12) hours += 12;
+  if (suffix === "am" && hours === 12) hours = 0;
+  if (hours > 23 || minutes > 59) return null;
+
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+}
+
 function parseWhen(args) {
   if (typeof args.minutes === "number" && Number.isFinite(args.minutes) && args.minutes > 0) {
     return new Date(Date.now() + args.minutes * 60_000);
   }
+
   if (typeof args.at === "string" && args.at.trim()) {
-    const date = new Date(args.at.trim());
-    if (!Number.isNaN(date.getTime())) return date;
+    const raw = args.at.trim();
+
+    // Full ISO datetime first, then a bare clock time for today.
+    if (/T|\d{4}-\d{2}-\d{2}/.test(raw)) {
+      const date = new Date(raw);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+
+    const clock = parseClock(raw);
+    if (clock) return clock;
+
+    const fallback = new Date(raw);
+    if (!Number.isNaN(fallback.getTime())) return fallback;
   }
+
   return null;
 }
 
@@ -300,6 +333,7 @@ function formatWhen(date) {
     weekday: "long",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 

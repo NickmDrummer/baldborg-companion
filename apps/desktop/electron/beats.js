@@ -113,10 +113,10 @@ function nextReminder() {
       .sort((a, b) => a.when - b.when);
     if (!upcoming.length) return null;
     return {
-      time: new Date(upcoming[0].when).toLocaleTimeString(state.lastLanguage === "en" ? "en-US" : "es-MX", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      time: new Date(upcoming[0].when).toLocaleTimeString(
+        state.lastLanguage === "en" ? "en-US" : "es-MX",
+        { hour: "2-digit", minute: "2-digit", hour12: false },
+      ),
       text: upcoming[0].text,
       inMinutes: Math.round((upcoming[0].when - now) / 60_000),
     };
