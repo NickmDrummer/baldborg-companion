@@ -132,10 +132,24 @@ In passive mode the main process calls
 transparent to input without hiding it. Under Wayland, `forward` delivers no
 motion events, so hover effects are disabled in passive mode by design.
 
-Focus is managed through `hyprctl`: before the window appears the app records
-the focused window, and every return to passive mode dispatches
-`focuswindow address:<saved>`. This is the only reliable way to give focus back
-on a compositor that does not honour `win.blur()`.
+Focus needs two things, because `win.blur()` does nothing under Hyprland and
+focus-follow-mouse grabs the overlay when the pointer crosses it:
+
+1. `no_focus = true` on the window (`hl.dsp.window.set_prop`) so the compositor
+   never focuses it on hover.
+2. An explicit handoff when the mode changes: Hyprland does not drop focus from
+   a window that becomes non-focusable, so the app focuses the most recently
+   used window **of the current workspace**
+   (`focusHistoryID` order, never another workspace).
+
+That second rule is what fixed the workspace ping-pong: restoring a window that
+lived on workspace 1 switched the composer to workspace 1, the pinned overlay
+was still under the pointer, it took focus again, and the cycle repeated.
+
+Pinned windows also keep a "home" workspace; focusing one from another
+workspace makes Hyprland jump there. When the chat opens on a different
+workspace, the app first adopts it with
+`hl.dsp.window.move({ workspace = "<id>", window = "class:delamain-desktop" })`.
 
 ## Positioning
 

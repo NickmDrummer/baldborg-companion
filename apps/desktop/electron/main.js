@@ -52,8 +52,6 @@ let tray = null;
 
 let state = loadState();
 let mode = "passive";
-/** Address of the window that had focus before we opened the chat bar. */
-let previousFocus = null;
 
 /* ---------------------------------------------------------------- state -- */
 
@@ -124,23 +122,6 @@ function restoreNoWarps() {
   }
 }
 
-function activeWindowAddress() {
-  try {
-    const active = JSON.parse(execFileSync("hyprctl", ["activewindow", "-j"], { timeout: 1500 }));
-    if (!active?.address || active.class === WM_CLASS) return null;
-    return active.address;
-  } catch {
-    return null;
-  }
-}
-
-function focusWindow(address) {
-  if (!address) return;
-  hyprDispatch(`hl.dsp.focus({ window = "address:${address}" })`).then((ok) => {
-    if (!ok) console.warn("[delamain] could not restore focus to", address);
-  });
-}
-
 function hyprlandClient() {
   try {
     const clients = JSON.parse(execFileSync("hyprctl", ["clients", "-j"], { timeout: 1500 }).toString());
@@ -185,7 +166,7 @@ function monitorForClient(client) {
  * app re-checks its own position and asks the compositor to move it when it
  * does not match the expected bottom-right corner.
  */
-function ensurePlacement() {
+async function ensurePlacement() {
   const client = hyprlandClient();
   if (!client?.at) return;
   const monitor = monitorForClient(client);
@@ -198,16 +179,49 @@ function ensurePlacement() {
 
   if (Math.abs(client.at[0] - globalX) < 8 && Math.abs(client.at[1] - globalY) < 8) return;
 
-  focusOverlay()
-    .then(() => hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`))
-    .then(() => {
-      if (mode === "passive") focusWindow(previousFocus);
-    });
+  const workspace = activeWorkspaceId();
+  await setOverlayFocusable(true);
+  await focusOverlay();
+  await hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`);
+  if (mode === "passive") {
+    await setOverlayFocusable(false);
+    focusPreviousOnWorkspace(workspace);
+  }
 }
 
 /** Hyprland's move/resize dispatchers target the active window, so focus first. */
 function focusOverlay() {
   return hyprDispatch(`hl.dsp.focus({ window = "class:${WM_CLASS}" })`);
+}
+
+function activeWorkspaceId() {
+  try {
+    return JSON.parse(execFileSync("hyprctl", ["activeworkspace", "-j"], { timeout: 1500 })).id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Give focus back without ever leaving the current workspace: restoring a
+ * window that lives elsewhere made Hyprland flip between workspaces while the
+ * pointer sat on the pinned overlay.
+ */
+function focusPreviousOnWorkspace(workspace = activeWorkspaceId()) {
+  let address = null;
+  try {
+    const clients = JSON.parse(execFileSync("hyprctl", ["clients", "-j"], { timeout: 1500 }).toString());
+    const candidates = clients
+      .filter(
+        (client) =>
+          client.class !== WM_CLASS && client.mapped && client.workspace?.id === workspace,
+      )
+      .sort((a, b) => a.focusHistoryID - b.focusHistoryID);
+    address = candidates[0]?.address ?? null;
+  } catch {
+    address = null;
+  }
+  if (address) hyprDispatch(`hl.dsp.focus({ window = "address:${address}" })`);
 }
 
 /**
@@ -220,9 +234,22 @@ async function applyWindowGeometry(next) {
   const client = hyprlandClient();
   const monitor = monitorForClient(client);
 
+  // Passive mode usually starts at the right size; skip the focus dance.
+  if (
+    mode === "passive" &&
+    client?.size?.[0] === size.width &&
+    client?.size?.[1] === size.height
+  ) {
+    return;
+  }
+
   // Ask Chromium too, for compositors that honour client resize requests.
   win?.setSize(size.width, size.height);
 
+  const workspace = activeWorkspaceId();
+
+  // move/resize act on the active window; allow focus just for this.
+  await setOverlayFocusable(true);
   await focusOverlay();
   await hyprDispatch(`hl.dsp.window.resize({ x = ${size.width}, y = ${size.height} })`);
 
@@ -245,7 +272,10 @@ async function applyWindowGeometry(next) {
     );
   }
 
-  if (mode === "passive") focusWindow(previousFocus);
+  if (mode === "passive") {
+    await setOverlayFocusable(false);
+    focusPreviousOnWorkspace(workspace);
+  }
 }
 
 /* ---------------------------------------------------------------- window -- */
@@ -295,13 +325,6 @@ function createWindow() {
     for (const delay of [500, 1500, 3000]) setTimeout(ensurePlacement, delay);
   });
 
-  // If Hyprland focuses us while passive, give focus back immediately.
-  win.on("focus", () => {
-    if (mode === "passive" && previousFocus) {
-      setTimeout(() => focusWindow(previousFocus), 80);
-    }
-  });
-
   win.on("closed", () => {
     win = null;
   });
@@ -323,20 +346,48 @@ function createWindow() {
 }
 
 /**
- * passive     -> clicks pass through, focus returns to the previous window
- * interactive -> accepts clicks, shows the chat bar, draggable
+ * Hyprland's follow-mouse focus makes the overlay grab focus whenever the
+ * pointer crosses it. In passive mode that must never happen: the window would
+ * fight for focus and, because the restore target can live on another
+ * workspace, the compositor would flip between workspaces. `no_focus` is set
+ * at the compositor level instead of relying on win.blur().
  */
-function applyMode(next) {
+function setOverlayFocusable(focusable) {
+  return hyprDispatch(
+    `hl.dsp.window.set_prop({ prop = "no_focus", value = "${focusable ? "false" : "true"}", window = "class:${WM_CLASS}" })`,
+  );
+}
+
+/**
+ * passive     -> no focus at all, clicks pass through
+ * interactive -> focusable, accepts clicks, shows the chat bar, draggable
+ */
+async function applyMode(next) {
   mode = next === "interactive" ? "interactive" : "passive";
   if (!win) return;
 
   if (mode === "passive") {
+    // Capture the workspace before touching focus: Hyprland may switch away
+    // the moment the overlay stops being focusable.
+    const workspace = activeWorkspaceId();
     win.setIgnoreMouseEvents(true, { forward: true });
-    focusWindow(previousFocus);
+    await setOverlayFocusable(false);
+    focusPreviousOnWorkspace(workspace);
   } else {
-    previousFocus = activeWindowAddress() ?? previousFocus;
     win.setIgnoreMouseEvents(false);
-    hyprDispatch(`hl.dsp.focus({ window = "class:${WM_CLASS}" })`);
+
+    // A pinned window keeps its home workspace; focusing it from another
+    // workspace makes Hyprland jump there. Adopt the active workspace first.
+    const workspace = activeWorkspaceId();
+    const client = hyprlandClient();
+    if (client && workspace !== null && client.workspace?.id !== workspace) {
+      await hyprDispatch(
+        `hl.dsp.window.move({ workspace = "${workspace}", window = "class:${WM_CLASS}" })`,
+      );
+    }
+
+    await setOverlayFocusable(true);
+    await focusOverlay();
   }
 
   win.webContents.send("mode:changed", mode);
@@ -488,9 +539,6 @@ if (!gotLock) {
   app.whenReady().then(() => {
     // Hyprland warps the pointer on focus changes; keep it still.
     enableNoWarps();
-
-    // Captured before our window exists, so it is the real previous focus.
-    previousFocus = activeWindowAddress();
 
     createWindow();
     createTray();
