@@ -128,6 +128,10 @@ export async function warmup(onState) {
   }
 }
 
+export function isBusy() {
+  return busy;
+}
+
 export function getHistory() {
   return history.map((entry) => ({ ...entry }));
 }

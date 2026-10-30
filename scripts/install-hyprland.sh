@@ -46,6 +46,39 @@ if [[ -d "$HOME/.config/omarchy" ]]; then
   install_hook battery-low "$REPO/config/omarchy/battery-low.sh" baldborg-battery.sh
 fi
 
+# Omarchy bar widget.
+PLUGIN_ID="nickmdrummer.baldborg"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+if [[ -d "$HOME/.config/omarchy" ]]; then
+  mkdir -p "$PLUGIN_DIR"
+  cp "$REPO/config/omarchy/plugin/manifest.json" "$PLUGIN_DIR/"
+  sed "s|__REPO__|$REPO|g" "$REPO/config/omarchy/plugin/BarWidget.qml" > "$PLUGIN_DIR/BarWidget.qml"
+  omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+
+  if [[ -f "$SHELL_JSON" ]] && ! grep -q "\"$PLUGIN_ID\"" "$SHELL_JSON"; then
+    cp "$SHELL_JSON" "$SHELL_JSON.bak.$(date +%s)"
+    python3 - "$SHELL_JSON" "$PLUGIN_ID" <<'PY'
+import json
+import sys
+
+path, plugin = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+layout = data.setdefault("bar", {}).setdefault("layout", {})
+left = layout.setdefault("left", [])
+if not any(isinstance(entry, dict) and entry.get("id") == plugin for entry in left):
+    left.append({"id": plugin})
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=False)
+    handle.write("\n")
+PY
+    echo "added $PLUGIN_ID to the bar (left)"
+  fi
+fi
+
 hyprctl reload >/dev/null
 echo "config errors:"
 hyprctl configerrors

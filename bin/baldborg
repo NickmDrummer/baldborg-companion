@@ -20,7 +20,7 @@ const SOCKET = join(homedir(), ".config", "baldborg", "control.sock");
 const [command, ...rest] = process.argv.slice(2);
 const payload = command === "announce" ? `announce ${rest.join(" ").trim()}` : command;
 
-const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "theme", "announce", "show", "hide", "quit", "capture"]);
+const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "theme", "announce", "status", "show", "hide", "quit", "capture"]);
 
 if (!command || !VALID.has(command)) {
   console.error(`usage: baldborg <${[...VALID].join("|")}>`);
@@ -37,4 +37,15 @@ socket.on("error", (error) => {
   process.exit(1);
 });
 
-socket.on("close", () => process.exit(0));
+if (command === "status") {
+  let data = "";
+  socket.on("data", (chunk) => {
+    data += chunk.toString();
+  });
+  socket.on("close", () => {
+    process.stdout.write(data);
+    process.exit(0);
+  });
+} else {
+  socket.on("close", () => process.exit(0));
+}

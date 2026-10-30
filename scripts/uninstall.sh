@@ -21,6 +21,31 @@ rm -f "$HOME/.config/omarchy/hooks/post-update.d/baldborg-update.sh"
 rm -f "$HOME/.config/omarchy/hooks/battery-low.d/baldborg-battery.sh"
 hyprctl reload >/dev/null 2>&1 || true
 
+PLUGIN_ID="nickmdrummer.baldborg"
+rm -rf "$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+if [[ -f "$SHELL_JSON" ]] && grep -q "\"$PLUGIN_ID\"" "$SHELL_JSON"; then
+  cp "$SHELL_JSON" "$SHELL_JSON.bak.$(date +%s)"
+  python3 - "$SHELL_JSON" "$PLUGIN_ID" <<'PY'
+import json
+import sys
+
+path, plugin = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+layout = data.get("bar", {}).get("layout", {})
+for section in ("left", "center", "right"):
+    entries = [e for e in layout.get(section, []) if not (isinstance(e, dict) and e.get("id") == plugin)]
+    layout[section] = entries
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=False)
+    handle.write("\n")
+PY
+fi
+omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+
 if [[ "${1:-}" == "--purge" ]]; then
   info "Purging local data"
   rm -rf "$HOME/.config/baldborg" "${XDG_STATE_HOME:-$HOME/.local/state}/baldborg"

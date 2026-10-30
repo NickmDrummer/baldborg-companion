@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "nickmdrummer.baldborg",
+  "name": "Baldborg",
+  "version": "1.0.0",
+  "author": "nickmdrummer",
+  "license": "MIT",
+  "description": "Holographic desktop companion: opens the chat and shows whether the core is idle, thinking or muted.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Baldborg",
+    "description": "Open the companion chat and see its state.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

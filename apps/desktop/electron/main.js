@@ -20,7 +20,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cancelChat, confirmAction, getHistory, resetHistory, startChat, warmup } from "./brain.js";
+import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
 import { forceBeat, noteInteraction, startBeats, stopBeats } from "./beats.js";
 import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
 
@@ -112,6 +112,8 @@ let tray = null;
 
 let state = loadState();
 let mode = "passive";
+let lastMood = "neutral";
+let warming = false;
 
 /* ---------------------------------------------------------------- state -- */
 
@@ -616,7 +618,23 @@ function startControlServer() {
       buffer += chunk.toString();
       const newline = buffer.indexOf("\n");
       if (newline === -1) return;
-      handleCommand(buffer.slice(0, newline).trim());
+
+      const raw = buffer.slice(0, newline).trim();
+      if (raw === "status") {
+        connection.end(
+          JSON.stringify({
+            mode,
+            muted: state.muted,
+            busy: isBusy(),
+            warming,
+            mood: lastMood,
+            accent: state.accent ?? null,
+          }) + "\n",
+        );
+        return;
+      }
+
+      handleCommand(raw);
       connection.end();
     });
     connection.on("error", () => {});
@@ -650,7 +668,10 @@ function registerIpc() {
   ipcMain.handle("brain:chat", (_event, text) => {
     if (typeof text !== "string" || !text.trim()) return;
     noteInteraction();
-    startChat(text.trim(), (event) => win?.webContents.send("brain:event", event));
+    startChat(text.trim(), (event) => {
+      if (event.type === "done" && event.mood) lastMood = event.mood;
+      win?.webContents.send("brain:event", event);
+    });
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
   ipcMain.handle("tools:confirm", (_event, id, accepted) => confirmAction(id, accepted));
@@ -701,7 +722,11 @@ if (!gotLock) {
 
     // Warm the model and its prompt cache while the overlay boots.
     setTimeout(
-      () => void warmup((active) => win?.webContents.send("brain:warm", active)),
+      () =>
+        void warmup((active) => {
+          warming = active;
+          win?.webContents.send("brain:warm", active);
+        }),
       2_500,
     );
 
