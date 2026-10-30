@@ -174,6 +174,90 @@ function requestConfirmation(summary, sink) {
   });
 }
 
+/* ------------------------------------------------------- reminder router -- */
+
+/**
+ * Reminders are too important to depend on the model deciding to call the
+ * tool: "recuérdame X en 20 minutos" is parsed here and scheduled directly.
+ */
+function routeReminder(raw) {
+  if (!/\b(recu[eé]rdame|recordarme|remind me)\b/i.test(raw)) return null;
+
+  let minutes = null;
+  let at = null;
+
+  const inMinutes =
+    raw.match(/\ben\s+(\d{1,3})\s*(minutos?|min)\b/i) ??
+    raw.match(/\bin\s+(\d{1,3})\s*(minutes?|mins?)\b/i);
+  const inHours =
+    raw.match(/\ben\s+(\d{1,2})\s*horas?\b/i) ??
+    raw.match(/\bin\s+(\d{1,2})\s*hours?\b/i);
+  const atClock = raw.match(
+    /\b(?:a\s+las?|at)\s+(\d{1,2})[:.](\d{2})\s*(am|pm|a\.m\.|p\.m\.)?/i,
+  );
+
+  if (inMinutes) minutes = Number(inMinutes[1]);
+  else if (inHours) minutes = Number(inHours[1]) * 60;
+  if (atClock) {
+    at = `${atClock[1]}:${atClock[2]}${atClock[3] ? ` ${atClock[3]}` : ""}`;
+  }
+
+  if (minutes === null && at === null) return null;
+
+  let text = raw
+    .replace(/^.*?\b(recu[eé]rdame|recordarme|remind me)\b\s*/i, "")
+    .replace(/\b(?:a\s+las?|at)\s+\d{1,2}[:.]\d{2}\s*(am|pm|a\.m\.|p\.m\.)?/i, "")
+    .replace(/\ben\s+\d{1,3}\s*(minutos?|min)\b/i, "")
+    .replace(/\bin\s+\d{1,3}\s*(minutes?|mins?)\b/i, "")
+    .replace(/\ben\s+\d{1,2}\s*horas?\b/i, "")
+    .replace(/\bin\s+\d{1,2}\s*hours?\b/i, "")
+    .trim()
+    .replace(/^(de|que|para|to)\s+/i, "")
+    .replace(/[.,;]+$/, "")
+    .trim();
+
+  if (!text) text = "recordatorio";
+
+  return { text, minutes, at, language: detectLanguage(raw) };
+}
+
+async function runReminderRoute(route, sink, userText) {
+  sink({ type: "tool", name: "set_reminder", status: "running" });
+
+  let outcome;
+  try {
+    const prepared = prepareTool("set_reminder", {
+      text: route.text,
+      ...(route.minutes !== null ? { minutes: route.minutes } : { at: route.at }),
+    });
+    const accepted = await requestConfirmation(prepared.summary, sink);
+    outcome = accepted ? await prepared.run() : { ok: false, cancelled: true };
+  } catch (error) {
+    outcome = { ok: false, error: error.message };
+  }
+
+  sink({ type: "tool", name: "set_reminder", status: "done" });
+
+  const english = route.language === "en";
+  const whenLabel = String(outcome.summary ?? "").replace(/^.*·\s*/, "");
+  const text = outcome.ok
+    ? english
+      ? `[[mood:pleased]] Noted, sir. I will remind you about it ${whenLabel}.`
+      : `[[mood:pleased]] Anotado, señor. Le recordaré el asunto ${whenLabel}.`
+    : outcome.cancelled
+      ? english
+        ? "[[mood:neutral]] Cancelled. The reminder does not exist."
+        : "[[mood:neutral]] Cancelado. El recordatorio no existe."
+      : english
+        ? "[[mood:stern]] I could not schedule it. Check the time, sir."
+        : "[[mood:stern]] No pude programarlo. Revise la hora, señor.";
+
+  const parsed = parseMood(text);
+  history = trimHistory([...history, { role: "user", content: userText }, { role: "assistant", content: parsed.text }]);
+  saveHistory();
+  sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
+}
+
 /** One request/response round against Ollama. */
 async function chatRound(messages, model, sink) {
   const response = await fetch(`${config.host}/api/chat`, {
@@ -262,6 +346,14 @@ export async function startChat(text, sink, modelOverride) {
   let finalText = "";
 
   try {
+    const reminder = routeReminder(text);
+    if (reminder) {
+      await runReminderRoute(reminder, sink, text);
+      busy = false;
+      controller = null;
+      return;
+    }
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       const result = await chatRound(messages, model, (event) => {
         if (firstToken === null) firstToken = performance.now();
