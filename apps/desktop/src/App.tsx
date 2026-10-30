@@ -196,7 +196,9 @@ export default function App() {
 
       setBeat({ text: event.text, mood: event.mood });
       if (beatTimer.current) window.clearTimeout(beatTimer.current);
-      beatTimer.current = window.setTimeout(() => setBeat(null), 20_000);
+      // Reminders stay a little longer: they matter more than a passing beat.
+      const duration = event.id?.startsWith("reminder-") ? 30_000 : 20_000;
+      beatTimer.current = window.setTimeout(() => setBeat(null), duration);
     });
 
     const offGlitch = api?.onGlitch(() => requestGlitch());
