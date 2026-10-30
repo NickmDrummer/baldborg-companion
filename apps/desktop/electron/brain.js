@@ -163,7 +163,7 @@ function requestConfirmation(summary, sink) {
       confirmations.delete(id);
       sink({ type: "confirm-cancel", id });
       resolve(false);
-    }, 120_000);
+    }, 90_000);
 
     confirmations.set(id, (accepted) => {
       clearTimeout(timer);
@@ -181,7 +181,9 @@ function requestConfirmation(summary, sink) {
  * tool: "recuérdame X en 20 minutos" is parsed here and scheduled directly.
  */
 function routeReminder(raw) {
-  if (!/\b(recu[eé]rdame|recordarme|remind me)\b/i.test(raw)) return null;
+  const TRIGGER =
+    /\b(recu[eé]rdame|recordarme|recordatorio|remind me|set(?:e)? (?:me )?a reminder|set up a reminder|create a reminder)\b/i;
+  if (!TRIGGER.test(raw)) return null;
 
   let minutes = null;
   let at = null;
@@ -205,14 +207,17 @@ function routeReminder(raw) {
   if (minutes === null && at === null) return null;
 
   let text = raw
-    .replace(/^.*?\b(recu[eé]rdame|recordarme|remind me)\b\s*/i, "")
+    .replace(
+      /^.*?\b(recu[eé]rdame|recordarme|remind me|set(?:e)? (?:me )?a reminder|set up a reminder|create a reminder)\b\s*/i,
+      "",
+    )
     .replace(/\b(?:a\s+las?|at)\s+\d{1,2}[:.]\d{2}\s*(am|pm|a\.m\.|p\.m\.)?/i, "")
     .replace(/\ben\s+\d{1,3}\s*(minutos?|min)\b/i, "")
     .replace(/\bin\s+\d{1,3}\s*(minutes?|mins?)\b/i, "")
     .replace(/\ben\s+\d{1,2}\s*horas?\b/i, "")
     .replace(/\bin\s+\d{1,2}\s*hours?\b/i, "")
     .trim()
-    .replace(/^(de|que|para|to)\s+/i, "")
+    .replace(/^(de|que|para|to|with|about|that|so that)\s+/i, "")
     .replace(/[.,;]+$/, "")
     .trim();
 
@@ -228,6 +233,7 @@ async function runReminderRoute(route, sink, userText) {
   try {
     const prepared = prepareTool("set_reminder", {
       text: route.text,
+      language: route.language,
       ...(route.minutes !== null ? { minutes: route.minutes } : { at: route.at }),
     });
     const accepted = await requestConfirmation(prepared.summary, sink);
@@ -246,8 +252,8 @@ async function runReminderRoute(route, sink, userText) {
       : `[[mood:pleased]] Anotado, señor. Le recordaré el asunto ${whenLabel}.`
     : outcome.cancelled
       ? english
-        ? "[[mood:neutral]] Cancelled. The reminder does not exist."
-        : "[[mood:neutral]] Cancelado. El recordatorio no existe."
+        ? "[[mood:neutral]] Cancelled or expired. The reminder does not exist."
+        : "[[mood:neutral]] Cancelado o expirado. El recordatorio no existe."
       : english
         ? "[[mood:stern]] I could not schedule it. Check the time, sir."
         : "[[mood:stern]] No pude programarlo. Revise la hora, señor.";

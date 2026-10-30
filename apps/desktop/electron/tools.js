@@ -328,9 +328,11 @@ function parseWhen(args) {
   return null;
 }
 
-function formatWhen(date) {
-  return date.toLocaleString("es-MX", {
+function formatWhen(date, language = "es") {
+  return date.toLocaleString(language === "en" ? "en-US" : "es-MX", {
     weekday: "long",
+    day: "numeric",
+    month: "long",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -345,9 +347,11 @@ function prepareReminder(args) {
   if (!when) throw new Error("se necesita 'minutes' o 'at' para el recordatorio");
   if (when.getTime() <= Date.now() + 5_000) throw new Error("esa hora ya pasó");
 
+  const language = args.language === "en" ? "en" : "es";
+
   return {
     requiresConfirmation: true,
-    summary: `Recordatorio: "${text}" · ${formatWhen(when)}`,
+    summary: `${language === "en" ? "Reminder" : "Recordatorio"}: "${text}" · ${formatWhen(when, language)}`,
     async run() {
       const id = `r${Date.now().toString(36)}`;
       const reminder = { id, text, at: when.toISOString(), created: new Date().toISOString() };
@@ -384,7 +388,7 @@ function prepareReminder(args) {
         }, seconds * 1000);
       }
 
-      return { ok: true, scheduledFor: when.toISOString(), summary: formatWhen(when) };
+      return { ok: true, scheduledFor: when.toISOString(), summary: formatWhen(when, language) };
     },
   };
 }
