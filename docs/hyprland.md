@@ -19,6 +19,7 @@ Bindings created by the file:
 | --- | --- |
 | `Super+Shift+D` | Toggle interactive mode |
 | `Super+Shift+M` | Mute / unmute voice |
+| `Super+Shift+R` | Replay the last reply |
 | `Super+Shift+H` | Hide the overlay |
 
 `Super+Shift+D` and `Super+Shift+M` were previously bound to Docker and
@@ -67,8 +68,8 @@ Wayland forbids application-level global hotkeys, so Electron's
 instead and calls `bin/delamain`, which speaks to the app over a UNIX socket at
 `~/.config/delamain/control.sock`.
 
-Available commands: `toggle`, `open`, `close`, `mute`, `show`, `hide`,
-`quit`, `capture` (writes `/tmp/opencode/delamain-capture.png`, useful for
+Available commands: `toggle`, `open`, `close`, `mute`, `forget`, `speak`,
+`show`, `hide`, `quit`, `capture` (writes `/tmp/opencode/delamain-capture.png`, useful for
 debugging the renderer).
 
 ## Pointer warping

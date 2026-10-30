@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("delamain", {
   setMode: (mode) => ipcRenderer.invoke("app:set-mode", mode),
   quit: () => ipcRenderer.invoke("app:quit"),
 
+  speak: (text) => ipcRenderer.invoke("voice:speak", text),
+  voiceStatus: () => ipcRenderer.invoke("voice:status"),
   sendMessage: (text) => ipcRenderer.invoke("brain:chat", text),
   cancelChat: () => ipcRenderer.invoke("brain:cancel"),
   getHistory: () => ipcRenderer.invoke("brain:history"),
@@ -19,6 +21,11 @@ contextBridge.exposeInMainWorld("delamain", {
     const listener = (_event, muted) => callback(muted);
     ipcRenderer.on("audio:muted", listener);
     return () => ipcRenderer.removeListener("audio:muted", listener);
+  },
+  onVoiceReplay: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("voice:replay", listener);
+    return () => ipcRenderer.removeListener("voice:replay", listener);
   },
   onBrainEvent: (callback) => {
     const listener = (_event, event) => callback(event);

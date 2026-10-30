@@ -22,9 +22,11 @@ o.window("^delamain-desktop$", {
 hl.unbind("SUPER + SHIFT + D")
 hl.unbind("SUPER + SHIFT + H")
 hl.unbind("SUPER + SHIFT + M")
+hl.unbind("SUPER + SHIFT + R")
 
 local delamain = os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain"
 
 o.bind("SUPER + SHIFT + D", "Delamain: modo interactivo", delamain .. " toggle")
 o.bind("SUPER + SHIFT + M", "Delamain: silenciar voz", delamain .. " mute")
+o.bind("SUPER + SHIFT + R", "Delamain: repetir voz", delamain .. " speak")
 o.bind("SUPER + SHIFT + H", "Delamain: ocultar", delamain .. " hide")

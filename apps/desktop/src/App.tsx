@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Avatar from "./avatar/Avatar";
 import type { Mood } from "./avatar/createAvatar";
+import { createSpeaker } from "./voice/speaker";
 
 type Mode = "passive" | "interactive";
 type Role = "user" | "assistant" | "error";
@@ -22,11 +23,13 @@ interface BrainEvent {
 }
 
 interface DelamainApi {
-  getState: () => Promise<{ mode: Mode; muted: boolean }>;
+  getState: () => Promise<{ mode: Mode; muted: boolean; autoSpeak?: boolean }>;
   setMode: (mode: Mode) => Promise<Mode>;
   quit: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   cancelChat: () => Promise<void>;
+  speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
+  onVoiceReplay: (callback: () => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
@@ -61,11 +64,34 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const streamingId = useRef<number | null>(null);
+  const speaker = useRef<ReturnType<typeof createSpeaker> | null>(null);
+  const mutedRef = useRef(false);
+  const autoSpeakRef = useRef(true);
+  const lastReply = useRef("");
+
+  const speakText = async (text: string) => {
+    if (mutedRef.current || !text) return;
+    const result = await api?.speak(text);
+    if (!result) return;
+    const bytes = new Uint8Array(result.wav);
+    await speaker.current?.speak(bytes.buffer);
+  };
+
+  useEffect(() => {
+    speaker.current = createSpeaker();
+    return () => speaker.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    speaker.current?.setMuted(muted);
+  }, [muted]);
 
   useEffect(() => {
     api?.getState().then((state) => {
       setMode(state.mode);
       setMuted(state.muted);
+      autoSpeakRef.current = state.autoSpeak ?? true;
     });
 
     api?.getHistory().then((history) => {
@@ -80,9 +106,16 @@ export default function App() {
 
     const offMode = api?.onModeChanged((next) => {
       setMode(next);
-      if (next === "passive") setDraft("");
+      if (next === "passive") {
+        setDraft("");
+        speaker.current?.stop();
+      }
     });
     const offMuted = api?.onMutedChanged(setMuted);
+
+    const offReplay = api?.onVoiceReplay(() => {
+      if (lastReply.current) void speakText(lastReply.current);
+    });
 
     const offBrain = api?.onBrainEvent((event) => {
       if (event.type === "reset") {
@@ -117,6 +150,11 @@ export default function App() {
             )
             .filter((entry) => entry.role !== "assistant" || entry.text.trim().length > 0),
         );
+
+        if (!event.cancelled && event.text) {
+          lastReply.current = event.text;
+          if (autoSpeakRef.current) void speakText(event.text);
+        }
         return;
       }
 
@@ -137,6 +175,7 @@ export default function App() {
     return () => {
       offMode?.();
       offMuted?.();
+      offReplay?.();
       offBrain?.();
     };
   }, []);

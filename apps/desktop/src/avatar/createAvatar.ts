@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { createBust, MOUTH_UNIFORMS } from "./bust";
+import { onMouthLevel } from "./level";
 
 export type Mood = "neutral" | "wry" | "concerned" | "stern" | "amused" | "ominous" | "pleased";
 
@@ -114,6 +115,10 @@ export function createAvatar(container: HTMLElement): AvatarApi {
   let glitchBurst = 0;
   let baseGlitch = 0.08;
   let speaking = false;
+  let mouthLevel = 0;
+  const stopMouth = onMouthLevel((value) => {
+    mouthLevel = value;
+  });
   let mood: Mood = "neutral";
   let blink = 1;
   let nextBlink = 2.5 + Math.random() * 3;
@@ -181,7 +186,9 @@ export function createAvatar(container: HTMLElement): AvatarApi {
       if (material.uniforms.uBlink) material.uniforms.uBlink.value = blink * pose.eye;
     }
 
-    if (speaking) {
+    if (mouthLevel > 0.03) {
+      MOUTH_UNIFORMS.open.value = 0.08 + mouthLevel * 0.92;
+    } else if (speaking) {
       MOUTH_UNIFORMS.open.value = 0.35 + Math.abs(Math.sin(time * 11)) * 0.65;
     } else {
       MOUTH_UNIFORMS.open.value = 0.06 + Math.abs(Math.sin(time * 1.3)) * 0.04;
@@ -219,6 +226,7 @@ export function createAvatar(container: HTMLElement): AvatarApi {
   return {
     dispose() {
       disposed = true;
+      stopMouth();
       observer.disconnect();
       renderer.dispose();
       target.dispose();

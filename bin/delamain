@@ -19,7 +19,7 @@ import { join } from "node:path";
 const SOCKET = join(homedir(), ".config", "delamain", "control.sock");
 const command = process.argv[2];
 
-const VALID = new Set(["toggle", "open", "close", "mute", "forget", "show", "hide", "quit", "capture"]);
+const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "show", "hide", "quit", "capture"]);
 
 if (!command || !VALID.has(command)) {
   console.error(`usage: delamain <${[...VALID].join("|")}>`);

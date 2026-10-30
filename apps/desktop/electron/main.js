@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, getHistory, resetHistory, startChat } from "./brain.js";
+import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -481,6 +482,9 @@ function handleCommand(command) {
       resetHistory();
       win?.webContents.send("brain:event", { type: "reset" });
       break;
+    case "speak":
+      win?.webContents.send("voice:replay");
+      break;
     case "show":
       win?.showInactive();
       break;
@@ -531,7 +535,11 @@ function startControlServer() {
 /* --------------------------------------------------------------- ipc ----- */
 
 function registerIpc() {
-  ipcMain.handle("app:get-state", () => ({ mode, muted: state.muted }));
+  ipcMain.handle("app:get-state", () => ({
+    mode,
+    muted: state.muted,
+    autoSpeak: autoSpeakEnabled(),
+  }));
   ipcMain.handle("app:set-mode", (_event, next) => {
     applyMode(next === "interactive" ? "interactive" : "passive");
     return mode;
@@ -544,6 +552,13 @@ function registerIpc() {
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
   ipcMain.handle("brain:history", () => getHistory());
+
+  ipcMain.handle("voice:speak", async (_event, text) => {
+    if (state.muted || typeof text !== "string" || !text.trim()) return null;
+    const result = await synthesize(text.trim());
+    return result ? { wav: result.wav, lang: result.lang } : null;
+  });
+  ipcMain.handle("voice:status", () => voiceStatus());
   ipcMain.handle("brain:reset", () => {
     resetHistory();
     return [];
@@ -578,6 +593,7 @@ if (!gotLock) {
   });
 
   app.on("will-quit", () => {
+    stopVoice();
     restoreNoWarps();
     globalShortcut.unregisterAll();
   });

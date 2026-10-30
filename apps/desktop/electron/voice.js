@@ -1,0 +1,203 @@
+/**
+ * Voice sidecar client.
+ *
+ * Owns the Python Kokoro process (started on first use, one model load per
+ * session) and turns text into a WAV buffer for the renderer to play.
+ */
+
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..", "..", "..");
+const VOICE_DIR = join(REPO_ROOT, "services", "voice");
+const CONFIG_PATH = join(REPO_ROOT, "config", "default.json");
+const HOST = "http://127.0.0.1:8765";
+
+const DEFAULTS = {
+  autoSpeak: true,
+  es: { voice: "em_alex", lang: "es", speed: 1.0 },
+  en: { voice: "bm_lewis", lang: "en-gb", speed: 1.0 },
+};
+
+const VENV_PYTHON = join(VOICE_DIR, ".venv", "bin", "python");
+
+const UV_CANDIDATES = [
+  "uv",
+  join(homedir(), ".local/share/mise/shims/uv"),
+  join(homedir(), ".local/share/mise/installs/uv/latest/.mise-bins/uv"),
+  join(homedir(), ".local/bin/uv"),
+  "/usr/bin/uv",
+];
+
+let child = null;
+let starting = null;
+let uvIndex = 0;
+let lastError = null;
+
+function voiceConfig() {
+  try {
+    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    return { ...DEFAULTS, ...(raw.voice ?? {}) };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+/** Cheap language guess: enough to pick between the Spanish and English voices. */
+export function detectLanguage(text) {
+  const sample = text.toLowerCase();
+  const es = (
+    sample.match(
+      /\b(el|la|los|las|de|que|y|para|con|su|sus|señor|usted|está|estoy|recomiendo|no|es|una|un|por|del|mi|le|lo)\b/g,
+    ) ?? []
+  ).length;
+  const en = (
+    sample.match(/\b(the|and|you|your|is|are|to|of|for|with|sir|recommend|not|it|that|this|i)\b/g) ??
+    []
+  ).length;
+  return es >= en ? "es" : "en";
+}
+
+async function isHealthy() {
+  try {
+    const response = await fetch(`${HOST}/health`, { signal: AbortSignal.timeout(800) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function spawnServer() {
+  // Prefer the project venv: one process, killed cleanly on quit. `uv run`
+  // spawns the interpreter as a child and leaves it orphaned behind.
+  const useVenv = existsSync(VENV_PYTHON);
+  const binary = useVenv
+    ? VENV_PYTHON
+    : UV_CANDIDATES[Math.min(uvIndex, UV_CANDIDATES.length - 1)];
+  const args = useVenv
+    ? ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"]
+    : ["run", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"];
+
+  console.info(`[delamain] starting voice sidecar with ${binary}`);
+
+  const proc = spawn(binary, args, {
+    cwd: VOICE_DIR,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+  });
+
+  proc.stdout.on("data", (data) => {
+    const line = data.toString().trim();
+    if (line) console.info(`[voice] ${line}`);
+  });
+  proc.stderr.on("data", (data) => {
+    const line = data.toString().trim();
+    if (line && !line.includes("Uvicorn running")) console.warn(`[voice] ${line}`);
+  });
+  proc.on("exit", (code) => {
+    if (child === proc) {
+      child = null;
+      starting = null;
+      if (code !== 0 && code !== null) lastError = `sidecar exited with ${code}`;
+    }
+  });
+  proc.on("error", (error) => {
+    console.warn(`[delamain] voice spawn failed (${uv}): ${error.message}`);
+    if (uvIndex < UV_CANDIDATES.length - 1) {
+      uvIndex += 1;
+      child = null;
+      starting = null;
+      startServer().catch(() => {});
+    }
+  });
+
+  child = proc;
+  return proc;
+}
+
+async function startServer() {
+  if (await isHealthy()) return;
+  if (!existsSync(join(VOICE_DIR, "server.py"))) {
+    throw new Error("voice sidecar not found");
+  }
+  if (!child) spawnServer();
+
+  const deadline = Date.now() + 25_000;
+  while (Date.now() < deadline) {
+    if (await isHealthy()) return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error("voice sidecar did not become ready");
+}
+
+export async function ensureVoiceReady() {
+  if (!starting) {
+    starting = startServer().catch((error) => {
+      starting = null;
+      lastError = error.message;
+      throw error;
+    });
+  }
+  return starting;
+}
+
+/**
+ * Synthesize text and return the WAV buffer plus the language used.
+ * Returns null when the voice is disabled or unavailable.
+ */
+export function autoSpeakEnabled() {
+  return voiceConfig().autoSpeak !== false;
+}
+
+export async function synthesize(text) {
+  const config = voiceConfig();
+  const lang = detectLanguage(text);
+  const voice = config[lang] ?? config.es;
+
+  try {
+    await ensureVoiceReady();
+    const response = await fetch(`${HOST}/synth`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        voice: voice.voice,
+        lang: voice.lang,
+        speed: voice.speed ?? 1.0,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`voice ${response.status}: ${await response.text()}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    lastError = null;
+    return { wav: buffer, lang, voice: voice.voice };
+  } catch (error) {
+    lastError = error.message;
+    console.warn("[delamain] synthesize failed:", error.message);
+    return null;
+  }
+}
+
+export function voiceStatus() {
+  return { ready: Boolean(child), error: lastError };
+}
+
+export function stopVoice() {
+  if (!child) return;
+  try {
+    // Negative pid targets the whole process group (uvicorn workers included).
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill("SIGTERM");
+  }
+  child = null;
+  starting = null;
+}

@@ -17,8 +17,8 @@ export const FACE = {
   eyeWidth: 0.17,
   eyeHeight: 0.05,
   mouth: { y: 0.24, z: 0.43 },
-  mouthWidth: 0.24,
-  mouthHeight: 0.035,
+  mouthWidth: 0.26,
+  mouthHeight: 0.085,
 };
 
 export const MOUTH_UNIFORMS = {
