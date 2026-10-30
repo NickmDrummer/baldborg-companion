@@ -185,7 +185,7 @@ export default function App() {
       setMood(event.mood);
       if (event.speak && !mutedRef.current) void speakText(event.text);
       if (beatTimer.current) window.clearTimeout(beatTimer.current);
-      beatTimer.current = window.setTimeout(() => setBeat(null), 12_000);
+      beatTimer.current = window.setTimeout(() => setBeat(null), 20_000);
     });
 
     const offGlitch = api?.onGlitch(() => requestGlitch());

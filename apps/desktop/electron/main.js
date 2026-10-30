@@ -621,6 +621,13 @@ function startControlServer() {
       if (newline === -1) return;
 
       const raw = buffer.slice(0, newline).trim();
+      if (raw === "beat") {
+        // Show the bubble: it only renders in passive mode.
+        applyMode("passive");
+        const id = forceBeat();
+        connection.end(JSON.stringify({ beat: id }) + "\n");
+        return;
+      }
       if (raw === "status") {
         connection.end(
           JSON.stringify({

@@ -261,7 +261,31 @@ export function noteInteraction() {
   schedule();
 }
 
-/** Force a beat, bypassing every gate; used by the control socket. */
+/**
+ * Force a beat for testing: bypasses every gate, including cooldowns.
+ * Falls back to the beats that always make sense if the context-specific ones
+ * do not apply right now.
+ */
 export function forceBeat() {
-  return fire();
+  resolvePending(false);
+
+  const ctx = buildContext();
+  const now = Date.now();
+  const byCondition = BEATS.filter((beat) => beat.when(ctx));
+  const pool = byCondition.length
+    ? byCondition
+    : BEATS.filter((beat) => ["checkin", "offer", "silence"].includes(beat.id));
+
+  const beat = pool[Math.floor(Math.random() * pool.length)];
+  if (!beat) return null;
+
+  const text = beat.text(ctx);
+  state.lastFired[beat.id] = now;
+  state.pending = { id: beat.id, at: now };
+  state.count += 1;
+  saveState();
+
+  send({ type: "beat", id: beat.id, text, mood: beat.mood, speak: config().speak });
+  console.info(`[baldborg] forced beat ${beat.id}: ${text}`);
+  return beat.id;
 }
