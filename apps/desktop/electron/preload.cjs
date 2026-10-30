@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("delamain", {
   voiceStatus: () => ipcRenderer.invoke("voice:status"),
   sendMessage: (text) => ipcRenderer.invoke("brain:chat", text),
   cancelChat: () => ipcRenderer.invoke("brain:cancel"),
+  confirmTool: (id, accepted) => ipcRenderer.invoke("tools:confirm", id, accepted),
   getHistory: () => ipcRenderer.invoke("brain:history"),
   resetMemory: () => ipcRenderer.invoke("brain:reset"),
 
@@ -21,6 +22,11 @@ contextBridge.exposeInMainWorld("delamain", {
     const listener = (_event, muted) => callback(muted);
     ipcRenderer.on("audio:muted", listener);
     return () => ipcRenderer.removeListener("audio:muted", listener);
+  },
+  onWindowFocus: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("window:focus", listener);
+    return () => ipcRenderer.removeListener("window:focus", listener);
   },
   onGlitch: (callback) => {
     const listener = () => callback();

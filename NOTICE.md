@@ -29,6 +29,12 @@ Models are downloaded by the user with Ollama and keep their own licenses:
 - Qwen3 (Apache License 2.0).
 - Llama 3.2 (Llama 3.2 Community License).
 
+## Data sources
+
+- Open-Meteo (weather): free API, CC-BY 4.0 attribution required.
+- TheSportsDB (fixtures): public API, free test key. Data belongs to
+  TheSportsDB and its providers.
+
 ## Libraries
 
 - three.js: MIT License.

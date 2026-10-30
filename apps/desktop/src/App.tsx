@@ -16,13 +16,25 @@ interface ChatEntry {
 }
 
 interface BrainEvent {
-  type: "chunk" | "done" | "error" | "reset";
+  type: "chunk" | "done" | "error" | "reset" | "tool" | "discard" | "confirm" | "confirm-cancel";
   text?: string;
   mood?: Mood;
   message?: string;
   hint?: string;
   cancelled?: boolean;
+  name?: string;
+  status?: "running" | "done";
+  id?: string;
+  summary?: string;
 }
+
+const TOOL_LABELS: Record<string, string> = {
+  get_weather: "CLIMA",
+  set_reminder: "RECORDATORIO",
+  team_fixtures: "EQUIPO",
+  system_status: "SISTEMA",
+  get_time: "HORA",
+};
 
 interface DelamainApi {
   getState: () => Promise<{
@@ -35,9 +47,11 @@ interface DelamainApi {
   quit: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   cancelChat: () => Promise<void>;
+  confirmTool: (id: string, accepted: boolean) => Promise<boolean>;
   speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
   onVoiceReplay: (callback: () => void) => () => void;
   onGlitch: (callback: () => void) => () => void;
+  onWindowFocus: (callback: () => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
@@ -69,6 +83,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [mood, setMood] = useState<Mood>("neutral");
   const [material, setMaterial] = useState<HeadMaterial>("normal");
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{ id: string; summary: string } | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -77,6 +93,7 @@ export default function App() {
   const mutedRef = useRef(false);
   const autoSpeakRef = useRef(true);
   const lastReply = useRef("");
+  const modeRef = useRef<Mode>("passive");
 
   const speakText = async (text: string) => {
     if (mutedRef.current || !text) return;
@@ -90,6 +107,10 @@ export default function App() {
     speaker.current = createSpeaker();
     return () => speaker.current?.stop();
   }, []);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   useEffect(() => {
     mutedRef.current = muted;
@@ -123,12 +144,39 @@ export default function App() {
     });
     const offMuted = api?.onMutedChanged(setMuted);
 
+    const offWindowFocus = api?.onWindowFocus(() => {
+      if (modeRef.current === "interactive") inputRef.current?.focus();
+    });
     const offGlitch = api?.onGlitch(() => requestGlitch());
     const offReplay = api?.onVoiceReplay(() => {
       if (lastReply.current) void speakText(lastReply.current);
     });
 
     const offBrain = api?.onBrainEvent((event) => {
+      if (event.type === "discard") {
+        const id = streamingId.current;
+        if (id === null) return;
+        setEntries((current) =>
+          current.map((entry) => (entry.id === id ? { ...entry, text: "" } : entry)),
+        );
+        return;
+      }
+
+      if (event.type === "tool") {
+        setActiveTool(event.status === "running" ? (event.name ?? null) : null);
+        return;
+      }
+
+      if (event.type === "confirm") {
+        setPendingConfirm({ id: event.id ?? "", summary: event.summary ?? "" });
+        return;
+      }
+
+      if (event.type === "confirm-cancel") {
+        setPendingConfirm(null);
+        return;
+      }
+
       if (event.type === "reset") {
         streamingId.current = null;
         setBusy(false);
@@ -148,6 +196,8 @@ export default function App() {
       }
 
       if (event.type === "done") {
+        setActiveTool(null);
+        setPendingConfirm(null);
         const id = streamingId.current;
         streamingId.current = null;
         setBusy(false);
@@ -188,6 +238,7 @@ export default function App() {
       offMuted?.();
       offReplay?.();
       offGlitch?.();
+      offWindowFocus?.();
       offBrain?.();
     };
   }, []);
@@ -201,6 +252,21 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (pendingConfirm) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void api?.confirmTool(pendingConfirm.id, true);
+          setPendingConfirm(null);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          void api?.confirmTool(pendingConfirm.id, false);
+          setPendingConfirm(null);
+          return;
+        }
+      }
+
       if (event.key !== "Escape" || mode !== "interactive") return;
       if (busy) {
         window.delamain?.cancelChat();
@@ -211,7 +277,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, busy]);
+  }, [mode, busy, pendingConfirm]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -248,7 +314,13 @@ export default function App() {
             <span className="grip-title">DELAMAIN CORE</span>
             <span className="grip-sep">·</span>
             <span className="grip-state">
-              {muted ? "VOZ SILENCIADA" : busy ? "PROCESANDO" : "ENLACE ABIERTO"}
+              {muted
+                ? "VOZ SILENCIADA"
+                : busy
+                  ? activeTool
+                    ? `CONSULTANDO ${TOOL_LABELS[activeTool] ?? activeTool.toUpperCase()}`
+                    : "PROCESANDO"
+                  : "ENLACE ABIERTO"}
             </span>
             <span className="hint">Esc</span>
           </div>
@@ -271,6 +343,32 @@ export default function App() {
               </p>
             ))}
           </div>
+
+          {pendingConfirm && (
+            <div className="confirm">
+              <span className="confirm-text">{pendingConfirm.summary}</span>
+              <button
+                type="button"
+                className="confirm-yes"
+                onClick={() => {
+                  void api?.confirmTool(pendingConfirm.id, true);
+                  setPendingConfirm(null);
+                }}
+              >
+                Confirmar
+              </button>
+              <button
+                type="button"
+                className="confirm-no"
+                onClick={() => {
+                  void api?.confirmTool(pendingConfirm.id, false);
+                  setPendingConfirm(null);
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
 
           <form onSubmit={submit}>
             <span className="prompt">&gt;</span>

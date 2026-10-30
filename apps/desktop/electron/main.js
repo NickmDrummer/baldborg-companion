@@ -18,7 +18,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cancelChat, getHistory, resetHistory, startChat } from "./brain.js";
+import { cancelChat, confirmAction, getHistory, resetHistory, startChat, warmup } from "./brain.js";
 import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -337,6 +337,9 @@ function createWindow() {
     for (const delay of [500, 1500, 3000]) setTimeout(ensurePlacement, delay);
   });
 
+  // Keep the chat input focused whenever the compositor focuses the window.
+  win.on("focus", () => win?.webContents.send("window:focus"));
+
   win.on("closed", () => {
     win = null;
   });
@@ -565,6 +568,7 @@ function registerIpc() {
     startChat(text.trim(), (event) => win?.webContents.send("brain:event", event));
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
+  ipcMain.handle("tools:confirm", (_event, id, accepted) => confirmAction(id, accepted));
   ipcMain.handle("brain:history", () => getHistory());
 
   ipcMain.handle("voice:speak", async (_event, text) => {
@@ -600,6 +604,9 @@ if (!gotLock) {
 
     // Give Hyprland time to map the surface before handing focus back.
     setTimeout(() => applyMode("passive"), 900);
+
+    // Warm the model and its prompt cache while the overlay boots.
+    setTimeout(() => void warmup(), 2_500);
 
     if (process.env.VITE_DEV_SERVER_URL) {
       win?.webContents.openDevTools({ mode: "detach" });
