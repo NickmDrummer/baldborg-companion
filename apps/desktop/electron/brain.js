@@ -29,7 +29,10 @@ const DEFAULTS = {
   temperature: 0.85,
 };
 
-const MAX_TURNS = 10;
+// Keep a generous window and trim in blocks: dropping two messages every turn
+// changes the prompt prefix and throws away Ollama's prompt cache.
+const MAX_TURNS = 20;
+const TRIM_BLOCK_TURNS = 6;
 const MAX_TOOL_ROUNDS = 4;
 
 function loadConfig() {
@@ -60,6 +63,12 @@ function loadHistory() {
     /* first run */
   }
   return [];
+}
+
+function trimHistory(list) {
+  const max = MAX_TURNS * 2;
+  const slack = TRIM_BLOCK_TURNS * 2;
+  return list.length <= max + slack ? list : list.slice(-max);
 }
 
 function saveHistory() {
@@ -103,6 +112,7 @@ export async function warmup(onState) {
         keep_alive: config.keepAlive,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
+          ...history,
           { role: "system", content: clockContext() },
           { role: "user", content: "ping" },
         ],
@@ -183,23 +193,33 @@ async function chatRound(messages, model, sink) {
   let text = "";
   const toolCalls = [];
 
+  const handleLine = (line) => {
+    if (!line) return;
+    const event = JSON.parse(line);
+    const piece = event.message?.content ?? "";
+    if (piece) {
+      text += piece;
+      sink({ type: "chunk", text: piece });
+    }
+    if (event.message?.tool_calls?.length) toolCalls.push(...event.message.tool_calls);
+    if (event.done) {
+      console.info(
+        `[baldborg] round: prompt ${event.prompt_eval_count ?? "?"} tokens in ` +
+          `${Math.round((event.prompt_eval_duration ?? 0) / 1e6)} ms`,
+      );
+    }
+  };
+
   for await (const chunk of response.body) {
     buffer += decoder.decode(chunk, { stream: true });
     let newline;
     while ((newline = buffer.indexOf("\n")) >= 0) {
       const line = buffer.slice(0, newline).trim();
       buffer = buffer.slice(newline + 1);
-      if (!line) continue;
-
-      const event = JSON.parse(line);
-      const piece = event.message?.content ?? "";
-      if (piece) {
-        text += piece;
-        sink({ type: "chunk", text: piece });
-      }
-      if (event.message?.tool_calls?.length) toolCalls.push(...event.message.tool_calls);
+      handleLine(line);
     }
   }
+  handleLine(buffer.trim());
 
   return { text, toolCalls };
 }
@@ -220,10 +240,12 @@ export async function startChat(text, sink, modelOverride) {
   let firstToken = null;
 
   const userEntry = { role: "user", content: text };
+  // Volatile context goes last so Ollama's prompt cache keeps the stable
+  // prefix (system prompt + history) between turns.
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
-    { role: "system", content: clockContext() },
     ...history,
+    { role: "system", content: clockContext() },
     userEntry,
   ];
 
@@ -279,7 +301,7 @@ export async function startChat(text, sink, modelOverride) {
     }
 
     const parsed = parseMood(finalText);
-    history = [...history, userEntry, { role: "assistant", content: parsed.text }].slice(-MAX_TURNS * 2);
+    history = trimHistory([...history, userEntry, { role: "assistant", content: parsed.text }]);
     saveHistory();
 
     console.info(
