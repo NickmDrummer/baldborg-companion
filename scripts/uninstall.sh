@@ -16,6 +16,7 @@ if [[ -f "$HYPR/hyprland.lua" ]] && grep -q 'require("hypr.baldborg")' "$HYPR/hy
   sed -i '/require("hypr.baldborg")/d' "$HYPR/hyprland.lua"
 fi
 rm -f "$HYPR/baldborg.lua"
+rm -f "$HOME/.config/omarchy/hooks/theme-set.d/baldborg-theme.sh"
 hyprctl reload >/dev/null 2>&1 || true
 
 if [[ "${1:-}" == "--purge" ]]; then

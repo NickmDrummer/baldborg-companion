@@ -37,6 +37,38 @@ const WM_CLASS = "baldborg-desktop";
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 
+/** Accent colour of the current Omarchy theme (colors.toml). */
+function currentThemeAccent() {
+  try {
+    const slug = execFileSync("omarchy", ["theme", "current"], { timeout: 2000 }).toString().trim();
+    if (!slug) return null;
+
+    const candidates = [];
+    try {
+      candidates.push(execFileSync("omarchy", ["theme", "dir", slug], { timeout: 2000 }).toString().trim());
+    } catch {
+      /* ignore */
+    }
+    const home = homedir();
+    candidates.push(
+      join(home, ".config", "omarchy", "themes", slug),
+      join(home, ".config", "omarchy", "themes", slug.toLowerCase()),
+      join("/usr/share/omarchy/themes", slug),
+      join("/usr/share/omarchy/themes", slug.toLowerCase()),
+    );
+
+    for (const dir of candidates) {
+      const file = join(dir, "colors.toml");
+      if (!existsSync(file)) continue;
+      const match = readFileSync(file, "utf8").match(/^accent\s*=\s*"([^"]+)"/m);
+      if (match) return match[1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function avatarMaterial() {
   try {
     return JSON.parse(readFileSync(CONFIG_PATH, "utf8")).avatar?.material ?? "normal";
@@ -516,6 +548,15 @@ function handleCommand(command) {
     case "beat":
       forceBeat();
       break;
+    case "theme": {
+      const accent = currentThemeAccent();
+      if (accent) {
+        saveState({ accent });
+        win?.webContents.send("theme:accent", accent);
+        console.info(`[baldborg] accent ${accent}`);
+      }
+      break;
+    }
     case "show":
       win?.showInactive();
       break;
@@ -571,6 +612,7 @@ function registerIpc() {
     muted: state.muted,
     autoSpeak: autoSpeakEnabled(),
     material: avatarMaterial(),
+    accent: state.accent ?? currentThemeAccent(),
   }));
   ipcMain.handle("app:set-mode", (_event, next) => {
     applyMode(next === "interactive" ? "interactive" : "passive");

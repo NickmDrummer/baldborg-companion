@@ -24,6 +24,7 @@ export interface HeadRig {
   eyes: THREE.Mesh[];
   mouth: THREE.Mesh;
   materials: THREE.ShaderMaterial[];
+  featureMaterials: THREE.ShaderMaterial[];
   size: THREE.Vector3;
 }
 
@@ -115,8 +116,16 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   head.frustumCulled = false;
   group.add(head);
 
-  // Eyes and mouth sit on the front of the face, positioned from head
-  // proportions rather than UV coordinates.
+  mesh.updateMatrixWorld(true);
+  const raycaster = new THREE.Raycaster();
+  const surfaceZ = (x: number, y: number, fallback: number) => {
+    raycaster.set(new THREE.Vector3(x, y, dims.z), new THREE.Vector3(0, 0, -1));
+    const hit = raycaster.intersectObject(mesh, false)[0];
+    return hit ? hit.point.z + 0.006 : fallback;
+  };
+
+  // Eyes and mouth sit on the actual face surface, so the opaque material
+  // cannot hide them behind the closed eyelids of the scan.
   const eyeMaterial = createFeatureMaterial();
   eyeMaterial.uniforms.uOpen.value = 1;
   const eyes = [-1, 1].map((side) => {
@@ -124,7 +133,9 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
     material.uniforms.uOpen.value = 1;
     const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     eye.scale.set(dims.x * 0.17, dims.y * 0.026, 1);
-    eye.position.set(side * dims.x * 0.17, dims.y * 0.075, FORWARD * (dims.z * 0.34));
+    const eyeX = side * dims.x * 0.17;
+    const eyeY = dims.y * 0.075;
+    eye.position.set(eyeX, eyeY, FORWARD * surfaceZ(eyeX, eyeY, dims.z * 0.34));
     eye.rotation.z = side * -0.07;
     group.add(eye);
     return eye;
@@ -134,8 +145,8 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const mouthMaterial = createFeatureMaterial();
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(dims.x * 0.125, dims.y * 0.019, 1);
-  mouth.position.set(0, -dims.y * 0.255, FORWARD * (dims.z * 0.35));
+  mouth.scale.set(dims.x * 0.13, dims.y * 0.05, 1);
+  mouth.position.set(0, -dims.y * 0.275, FORWARD * surfaceZ(0, -dims.y * 0.275, dims.z * 0.34));
   group.add(mouth);
 
   return {
@@ -143,6 +154,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
     eyes,
     mouth,
     materials: [headMaterial, ...eyes.map((eye) => eye.material as THREE.ShaderMaterial), mouthMaterial],
+    featureMaterials: [...eyes.map((eye) => eye.material as THREE.ShaderMaterial), mouthMaterial],
     size: dims,
   };
 }
@@ -280,11 +292,14 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    depthTest: false,
+    blending: THREE.NormalBlending,
     uniforms: {
       uOpen: { value: 0 },
       uBlink: { value: 1 },
-      uColor: { value: new THREE.Color("#e8fbff") },
+      uGlitch: { value: 0 },
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color("#d6f4ff") },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -298,6 +313,12 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uniform vec3 uColor;
       uniform float uOpen;
       uniform float uBlink;
+      uniform float uGlitch;
+      uniform float uTime;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
 
       float sdRound(vec2 p, vec2 halfSize, float r) {
         vec2 q = abs(p) - halfSize + r;
@@ -306,12 +327,23 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
 
       void main() {
         vec2 p = (vUv - 0.5) * vec2(1.0, 1.0);
+
+        // Local signal failure: horizontal slices slide and turn red.
+        float row = floor(vUv.y * 9.0);
+        float timeSlice = floor(uTime * 18.0);
+        float gate = step(0.55, hash(vec2(row, timeSlice)));
+        float slide = (hash(vec2(row, 7.0)) - 0.5) * 0.4 * gate * uGlitch;
+        p.x += slide;
+        p.y += (hash(vec2(timeSlice, 3.0)) - 0.5) * 0.12 * gate * uGlitch;
+
         float height = mix(0.18, 1.0, uOpen) * uBlink;
         float d = sdRound(p, vec2(0.42, 0.5 * height), 0.28);
-        float core = smoothstep(0.06, -0.06, abs(d));
-        float halo = smoothstep(0.28, 0.0, abs(d)) * 0.2;
+        // Fill the shape (d < 0 inside), with a soft edge and a faint halo.
+        float core = smoothstep(0.03, -0.03, d);
+        float halo = smoothstep(0.18, 0.0, d) * 0.12;
         float alpha = clamp(core + halo, 0.0, 1.0);
-        gl_FragColor = vec4(uColor, alpha);
+        vec3 color = mix(uColor, vec3(1.0, 0.12, 0.08), gate * uGlitch * 0.85);
+        gl_FragColor = vec4(color, alpha);
       }
     `,
   });

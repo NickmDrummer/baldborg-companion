@@ -1,6 +1,7 @@
 :root {
   color-scheme: dark;
   --holo: #7fd6ff;
+  --glow: rgba(127, 214, 255, 0.35);
   --holo-dim: rgba(127, 214, 255, 0.35);
   --holo-faint: rgba(127, 214, 255, 0.12);
   --ink: #031018;
@@ -47,7 +48,7 @@ body,
   flex: 0 0 auto;
   animation: rise 900ms ease-out both;
   /* Cheap bloom: follows the canvas alpha, no post-processing pass needed. */
-  filter: drop-shadow(0 0 6px rgba(127, 214, 255, 0.35));
+  filter: drop-shadow(0 0 6px var(--glow));
 }
 
 .avatar {

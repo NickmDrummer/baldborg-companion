@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("audio:muted", listener);
     return () => ipcRenderer.removeListener("audio:muted", listener);
   },
+  onAccent: (callback) => {
+    const listener = (_event, color) => callback(color);
+    ipcRenderer.on("theme:accent", listener);
+    return () => ipcRenderer.removeListener("theme:accent", listener);
+  },
   onWindowFocus: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("window:focus", listener);

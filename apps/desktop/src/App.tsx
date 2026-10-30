@@ -50,6 +50,7 @@ interface BaldborgApi {
     muted: boolean;
     autoSpeak?: boolean;
     material?: HeadMaterial;
+    accent?: string;
   }>;
   setMode: (mode: Mode) => Promise<Mode>;
   quit: () => Promise<void>;
@@ -60,6 +61,7 @@ interface BaldborgApi {
   onVoiceReplay: (callback: () => void) => () => void;
   onGlitch: (callback: () => void) => () => void;
   onWindowFocus: (callback: () => void) => () => void;
+  onAccent: (callback: (color: string) => void) => () => void;
   onBeat: (callback: (beat: BeatEvent) => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
@@ -80,6 +82,16 @@ const TAG_RE = /^\s*\[\[mood:\s*([a-z]+)\s*\]\]\s*/i;
 /** Hide the machine-readable mood tag while the reply streams in. */
 function visibleText(raw: string) {
   return raw.replace(TAG_RE, "");
+}
+
+function applyAccent(color: string) {
+  const root = document.documentElement;
+  root.style.setProperty("--holo", color);
+  const match = color.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (match) {
+    const [, r, g, b] = match;
+    root.style.setProperty("--glow", `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, 0.38)`);
+  }
 }
 
 let nextId = 1;
@@ -134,6 +146,7 @@ export default function App() {
       setMuted(state.muted);
       autoSpeakRef.current = state.autoSpeak ?? true;
       if (state.material) setMaterial(state.material);
+      if (state.accent) applyAccent(state.accent);
     });
 
     api?.getHistory().then((history) => {
@@ -159,6 +172,8 @@ export default function App() {
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
     });
+    const offAccent = api?.onAccent((color) => applyAccent(color));
+
     const offBeat = api?.onBeat((event) => {
       setBeat({ text: event.text, mood: event.mood });
       setMood(event.mood);
@@ -260,6 +275,7 @@ export default function App() {
       offGlitch?.();
       offBeat?.();
       offWindowFocus?.();
+      offAccent?.();
       offBrain?.();
     };
   }, []);
@@ -329,14 +345,14 @@ export default function App() {
         ) : (
           <div className="statusline">
             <span className="dot" />
-            BALDBORG CORE · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
+            BALDBORG · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
           </div>
         )
       ) : (
         <div className="console">
           <div className="grip">
             <span className="dot" />
-            <span className="grip-title">BALDBORG CORE</span>
+            <span className="grip-title">BALDBORG</span>
             <span className="grip-sep">·</span>
             <span className="grip-state">
               {muted

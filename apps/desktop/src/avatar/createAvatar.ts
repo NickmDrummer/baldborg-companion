@@ -41,11 +41,13 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
   const rig = new THREE.Group();
   scene.add(rig);
   let materials: THREE.ShaderMaterial[] = [];
+  let featureMaterials: THREE.ShaderMaterial[] = [];
 
   loadHead(material)
     .then((head) => {
       rig.add(head.group);
       materials = head.materials;
+      featureMaterials = head.featureMaterials;
       console.info(`[baldborg] head loaded: ${head.size.x.toFixed(2)}x${head.size.y.toFixed(2)}`);
     })
     .catch((error) => console.warn("[baldborg] head load failed:", error.message));
@@ -132,6 +134,7 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
   let baseGlitch = 0.08;
   let speaking = false;
   let mouthLevel = 0;
+  let featureGlitch = 0;
   const stopMouth = onMouthLevel((value) => {
     mouthLevel = value;
   });
@@ -203,6 +206,19 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     for (const material of materials) {
       if (material.uniforms.uTime) material.uniforms.uTime.value = time;
       if (material.uniforms.uBlink) material.uniforms.uBlink.value = blink * pose.eye;
+    }
+
+    // Local signal failure on the face while the jaw moves.
+    const glitchTarget =
+      mouthLevel > 0.05
+        ? Math.random() < 0.22
+          ? 0.55 + mouthLevel * 0.45
+          : mouthLevel * 0.18
+        : 0;
+    featureGlitch += (glitchTarget - featureGlitch) * Math.min(1, delta * 14);
+    for (const material of featureMaterials) {
+      if (material.uniforms.uGlitch) material.uniforms.uGlitch.value = featureGlitch;
+      if (material.uniforms.uTime) material.uniforms.uTime.value = time;
     }
 
     if (mouthLevel > 0.03) {

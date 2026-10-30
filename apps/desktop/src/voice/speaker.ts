@@ -78,7 +78,7 @@ export function createSpeaker(): Speaker {
         sum += value * value;
       }
       const rms = Math.sqrt(sum / data.length);
-      const level = Math.min(1, rms * 5.5);
+      const level = Math.min(1, rms * 12);
       peak = Math.max(peak, level);
       setMouthLevel(level);
       frame = requestAnimationFrame(tick);
