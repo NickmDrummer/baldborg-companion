@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Build output
+dist/
+out/
+build/
+*.AppImage
+
+# Large model weights (downloaded on demand, see docs)
+services/voice/assets/models/*.onnx
+services/voice/assets/models/*.bin
+services/voice/assets/models/*.tar.gz
+
+# Generated audio
+services/voice/samples/*.wav
+
+# Local state
+.env
+.env.local
+.DS_Store

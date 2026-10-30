@@ -1,0 +1,301 @@
+:root {
+  color-scheme: dark;
+  --holo: #7fd6ff;
+  --holo-dim: rgba(127, 214, 255, 0.35);
+  --holo-faint: rgba(127, 214, 255, 0.12);
+  --ink: #031018;
+  font-family: ui-monospace, "JetBrainsMono Nerd Font", "Cascadia Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+
+.stage {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.stage.interactive {
+  pointer-events: auto;
+}
+
+/* --- placeholder head: replaced by the three.js avatar in phase 2 --- */
+
+.head {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  margin-left: -215px;
+  width: 430px;
+  height: 470px;
+  display: grid;
+  place-items: center;
+  animation: rise 900ms ease-out both;
+}
+
+.head-glow {
+  position: absolute;
+  inset: 8% 14% 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, rgba(127, 214, 255, 0.22), transparent 62%);
+  filter: blur(18px);
+}
+
+.head-core {
+  position: relative;
+  width: 260px;
+  height: 330px;
+  border-radius: 46% 46% 40% 40% / 40% 40% 46% 46%;
+  background:
+    linear-gradient(180deg, rgba(127, 214, 255, 0.16), rgba(9, 42, 56, 0.28) 55%, rgba(127, 214, 255, 0.1)),
+    radial-gradient(circle at 50% 30%, rgba(180, 240, 255, 0.22), transparent 60%);
+  border: 1px solid rgba(127, 214, 255, 0.5);
+  box-shadow:
+    inset 0 0 40px rgba(127, 214, 255, 0.22),
+    inset 0 0 120px rgba(0, 0, 0, 0.45),
+    0 0 30px rgba(127, 214, 255, 0.25);
+  animation: breathe 5.5s ease-in-out infinite;
+}
+
+.eye {
+  position: absolute;
+  top: 44%;
+  width: 46px;
+  height: 7px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, transparent, #d6f4ff 20%, #ffffff 50%, #d6f4ff 80%, transparent);
+  box-shadow: 0 0 14px 2px rgba(190, 240, 255, 0.75);
+  animation: blink 6.4s infinite;
+}
+
+.eye.left {
+  left: 15%;
+}
+
+.eye.right {
+  right: 15%;
+  animation-delay: 120ms;
+}
+
+.mouth {
+  position: absolute;
+  bottom: 24%;
+  left: 50%;
+  width: 74px;
+  height: 2px;
+  transform: translateX(-50%);
+  background: rgba(200, 245, 255, 0.85);
+  box-shadow: 0 0 12px rgba(160, 235, 255, 0.8);
+  animation: mouth 5.5s ease-in-out infinite;
+}
+
+.scanlines {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(160, 235, 255, 0.08) 0px,
+    rgba(160, 235, 255, 0.08) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  animation: roll 7s linear infinite;
+  pointer-events: none;
+}
+
+/* --- status + console --- */
+
+.statusline {
+  position: absolute;
+  bottom: 102px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--holo-dim);
+  text-transform: uppercase;
+  transition: color 200ms ease;
+}
+
+.stage.interactive .statusline {
+  color: var(--holo);
+}
+
+.stage.passive .statusline {
+  bottom: 18px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.console {
+  width: calc(100% - 40px);
+  margin-bottom: 22px;
+  border: 1px solid rgba(127, 214, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(3, 18, 26, 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(127, 214, 255, 0.08);
+  overflow: hidden;
+  animation: fade 180ms ease-out both;
+}
+
+.grip {
+  height: 16px;
+  cursor: grab;
+  background: linear-gradient(180deg, rgba(127, 214, 255, 0.14), transparent);
+  border-bottom: 1px solid rgba(127, 214, 255, 0.12);
+  -webkit-app-region: drag;
+}
+
+.console form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 12px;
+}
+
+.prompt {
+  color: var(--holo);
+  opacity: 0.8;
+}
+
+.console input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #d8f6ff;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.console input::placeholder {
+  color: rgba(127, 214, 255, 0.35);
+}
+
+.hint {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(127, 214, 255, 0.4);
+  white-space: nowrap;
+}
+
+/* --- motion --- */
+
+@keyframes blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.12);
+  }
+  96% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes mouth {
+  0%,
+  100% {
+    transform: translateX(-50%) scaleY(0.8);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateX(-50%) scaleY(1.6);
+    opacity: 1;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.008);
+  }
+}
+
+@keyframes roll {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 64px;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .head,
+  .head-core,
+  .eye,
+  .mouth,
+  .scanlines,
+  .dot {
+    animation: none;
+  }
+}

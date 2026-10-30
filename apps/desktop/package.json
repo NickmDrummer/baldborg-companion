@@ -1,0 +1,33 @@
+{
+  "name": "delamain-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Holographic Delamain companion overlay for the Linux desktop",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 ELECTRON_OZONE_PLATFORM_HINT=auto electron .\"",
+    "build": "vite build",
+    "start": "cross-env ELECTRON_OZONE_PLATFORM_HINT=auto electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^40.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.0.0",
+    "wait-on": "^8.0.0"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "allowScripts": {
+    "electron@40.10.6": true,
+    "esbuild@0.28.2": true
+  }
+}

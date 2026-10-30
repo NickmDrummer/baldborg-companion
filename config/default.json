@@ -1,0 +1,32 @@
+{
+  "brain": {
+    "provider": "ollama",
+    "host": "http://127.0.0.1:11434",
+    "model": "qwen3:4b-instruct-2507-q4_K_M",
+    "fallbackModel": "llama3.2:3b",
+    "numCtx": 8192,
+    "numPredict": 180,
+    "keepAlive": "30m",
+    "temperature": 0.8
+  },
+  "voice": {
+    "en": {
+      "engine": "kokoro",
+      "voice": "bm_lewis",
+      "lang": "en-gb",
+      "speed": 1.0
+    },
+    "es": {
+      "engine": "kokoro",
+      "voice": "em_santa",
+      "lang": "es",
+      "speed": 1.0
+    }
+  },
+  "avatar": {
+    "window": { "width": 700, "height": 700 },
+    "headScale": 1.0,
+    "glitchIntensity": 0.6,
+    "color": "#7fd6ff"
+  }
+}
