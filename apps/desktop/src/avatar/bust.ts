@@ -25,6 +25,9 @@ export interface HeadRig {
   mouth: THREE.Mesh;
   materials: THREE.ShaderMaterial[];
   featureMaterials: THREE.ShaderMaterial[];
+  eyeMaterials: THREE.ShaderMaterial[];
+  mouthMaterial: THREE.ShaderMaterial;
+  headMaterial: THREE.ShaderMaterial;
   size: THREE.Vector3;
 }
 
@@ -131,6 +134,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const eyes = [-1, 1].map((side) => {
     const material = eyeMaterial.clone();
     material.uniforms.uOpen.value = 1;
+    material.uniforms.uColor.value = new THREE.Color("#ff2a1e");
     const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     eye.scale.set(dims.x * 0.19, dims.y * 0.03, 1);
     const eyeX = side * dims.x * 0.17;
@@ -147,7 +151,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const sockets = [
     { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
     { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
-    { x: 0, y: -dims.y * 0.31, w: dims.x * 0.21, h: dims.y * 0.07 },
+    { x: 0, y: -dims.y * 0.28, w: dims.x * 0.22, h: dims.y * 0.075 },
   ];
   for (const socket of sockets) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), socketMaterial);
@@ -160,8 +164,8 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const mouthMaterial = createFeatureMaterial();
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(dims.x * 0.13, dims.y * 0.05, 1);
-  mouth.position.set(0, -dims.y * 0.31, FORWARD * surfaceZ(0, -dims.y * 0.31, dims.z * 0.34));
+  mouth.scale.set(dims.x * 0.15, dims.y * 0.055, 1);
+  mouth.position.set(0, -dims.y * 0.28, FORWARD * surfaceZ(0, -dims.y * 0.28, dims.z * 0.34));
   mouth.renderOrder = 2;
   group.add(mouth);
 
@@ -171,6 +175,9 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
     mouth,
     materials: [headMaterial, ...eyes.map((eye) => eye.material as THREE.ShaderMaterial), mouthMaterial],
     featureMaterials: [...eyes.map((eye) => eye.material as THREE.ShaderMaterial), mouthMaterial],
+    eyeMaterials: eyes.map((eye) => eye.material as THREE.ShaderMaterial),
+    mouthMaterial,
+    headMaterial,
     size: dims,
   };
 }
@@ -187,29 +194,58 @@ function createNormalMaterial(): THREE.ShaderMaterial {
     side: THREE.FrontSide,
     uniforms: {
       uCutY: { value: -0.8 },
+      uVisor: { value: 1 },
+      uTime: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
       varying float vLocalY;
-      uniform float uCutY;
+      varying vec3 vLocal;
 
       void main() {
         vNormal = normalize(normalMatrix * normal);
         vec4 world = modelMatrix * vec4(position, 1.0);
         vLocalY = position.y;
+        vLocal = position;
         gl_Position = projectionMatrix * viewMatrix * world;
       }
     `,
     fragmentShader: /* glsl */ `
       varying vec3 vNormal;
       varying float vLocalY;
+      varying vec3 vLocal;
       uniform float uCutY;
+      uniform float uVisor;
+      uniform float uTime;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
 
       void main() {
+        if (vLocalY < uCutY) discard;
+
         vec3 normalColor = normalize(vNormal) * 0.5 + 0.5;
+
+        // Visor band across both eyes: blocky glitch while idle.
+        float slice = floor(vLocal.y * 34.0);
+        float noise = hash(vec2(slice, floor(uTime * 6.0)));
+        float jitter = step(0.82, noise) * (noise - 0.5) * 0.03;
+        float x = vLocal.x + jitter;
+
+        float inX = smoothstep(0.36, 0.33, abs(x));
+        float inY = smoothstep(-0.06, -0.03, vLocal.y) * smoothstep(0.18, 0.15, vLocal.y);
+        float band = inX * inY * uVisor;
+
+        float flash = step(0.9, noise) * uVisor;
+        vec3 visorColor = mix(vec3(0.004, 0.008, 0.014), vec3(0.85, 0.06, 0.04), flash);
+
         // Dissolve the clipped neck instead of ending on a hard edge.
         float fade = smoothstep(uCutY, uCutY + 0.07, vLocalY);
-        gl_FragColor = vec4(normalColor, fade);
+
+        vec3 color = mix(normalColor, visorColor, band);
+        float alpha = mix(fade, 1.0, band);
+        gl_FragColor = vec4(color, alpha);
       }
     `,
   });
@@ -343,6 +379,7 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uBlink: { value: 1 },
       uGlitch: { value: 0 },
       uTime: { value: 0 },
+      uVisibility: { value: 1 },
       uColor: { value: new THREE.Color("#d6f4ff") },
     },
     vertexShader: /* glsl */ `
@@ -359,6 +396,7 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uniform float uBlink;
       uniform float uGlitch;
       uniform float uTime;
+      uniform float uVisibility;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -387,7 +425,7 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
         float d = length(q) - 1.0;
         float core = smoothstep(0.05, -0.05, d);
         float halo = smoothstep(0.35, 0.0, d) * 0.18;
-        float alpha = clamp(core + halo, 0.0, 1.0);
+        float alpha = clamp(core + halo, 0.0, 1.0) * uVisibility;
         vec3 color = mix(uColor, vec3(1.0, 0.12, 0.08), gate * uGlitch * 0.85);
         gl_FragColor = vec4(color, alpha);
       }

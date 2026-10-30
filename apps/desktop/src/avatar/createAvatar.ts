@@ -42,12 +42,16 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
   scene.add(rig);
   let materials: THREE.ShaderMaterial[] = [];
   let featureMaterials: THREE.ShaderMaterial[] = [];
+  let eyeMaterials: THREE.ShaderMaterial[] = [];
+  let headMaterial: THREE.ShaderMaterial | null = null;
 
   loadHead(material)
     .then((head) => {
       rig.add(head.group);
       materials = head.materials;
       featureMaterials = head.featureMaterials;
+      eyeMaterials = head.eyeMaterials;
+      headMaterial = head.headMaterial;
       console.info(`[baldborg] head loaded: ${head.size.x.toFixed(2)}x${head.size.y.toFixed(2)}`);
     })
     .catch((error) => console.warn("[baldborg] head load failed:", error.message));
@@ -135,6 +139,8 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
   let speaking = false;
   let mouthLevel = 0;
   let featureGlitch = 0;
+  let visor = 1;
+  let lastVoiceAt = -10;
   const stopMouth = onMouthLevel((value) => {
     mouthLevel = value;
   });
@@ -206,6 +212,19 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     for (const material of materials) {
       if (material.uniforms.uTime) material.uniforms.uTime.value = time;
       if (material.uniforms.uBlink) material.uniforms.uBlink.value = blink * pose.eye;
+    }
+
+    // Visor: closed while idle, opens ~120 ms after the voice starts and stays
+    // open through short pauses.
+    if (mouthLevel > 0.05) lastVoiceAt = time;
+    const visorTarget = time - lastVoiceAt < 1.2 ? 0 : 1;
+    visor += (visorTarget - visor) * Math.min(1, delta * 10);
+    if (headMaterial) {
+      headMaterial.uniforms.uVisor.value = visor;
+      headMaterial.uniforms.uTime.value = time;
+    }
+    for (const material of eyeMaterials) {
+      material.uniforms.uVisibility.value = 1 - visor;
     }
 
     // Local signal failure on the face while the jaw moves.
