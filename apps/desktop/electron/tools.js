@@ -12,6 +12,8 @@ import { homedir, loadavg, totalmem, freemem, uptime } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { makeQuip } from "./quip.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 const STATE_DIR = join(homedir(), ".config", "baldborg");
@@ -304,7 +306,7 @@ function reminderEvent(reminder) {
   return {
     type: "beat",
     id: `reminder-${reminder.id}`,
-    text: `${prefix}: ${reminder.text}. ${jokes[index]}`,
+    text: `${prefix}: ${reminder.text}. ${reminder.quip || jokes[index]}`,
     mood: "wry",
     speak: true,
   };
@@ -315,7 +317,9 @@ function scheduleInApp(reminder) {
   const delay = new Date(reminder.at).getTime() - Date.now();
   if (delay <= 0) return;
   setTimeout(() => {
-    reminderNotifier?.(reminderEvent(reminder));
+    // Re-read: the quip may have arrived after the timer was armed.
+    const current = loadReminders().find((entry) => entry.id === reminder.id) ?? reminder;
+    reminderNotifier?.(reminderEvent(current));
     const remaining = loadReminders().filter((entry) => entry.id !== reminder.id);
     saveReminders(remaining);
   }, delay);
@@ -421,6 +425,7 @@ function prepareReminder(args) {
         at: when.toISOString(),
         created: new Date().toISOString(),
         language,
+        quip: null,
       };
 
       const reminders = loadReminders().filter((entry) => new Date(entry.at) > new Date());
@@ -456,6 +461,17 @@ function prepareReminder(args) {
       }
 
       scheduleInApp(reminder);
+
+      // The quip is generated in the background: it must not delay the
+      // confirmation or compete with the model's warmup.
+      void makeQuip(text, language).then((quip) => {
+        if (!quip) return;
+        const list = loadReminders();
+        const stored = list.find((entry) => entry.id === id);
+        if (!stored) return;
+        stored.quip = quip;
+        saveReminders(list);
+      });
 
       return { ok: true, scheduledFor: when.toISOString(), summary: formatWhen(when, language) };
     },
