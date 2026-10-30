@@ -21,6 +21,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// The overlay is pixel-exact: Chromium's fractional scale (1.1875 on this
+// setup) renders a larger buffer than the Wayland surface and the compositor
+// crops it, which cut the bottom of the chat bar. Force CSS px == device px.
+app.commandLine.appendSwitch("force-device-scale-factor", "1");
+
 /** Hyprland window class; it comes from package.json "name". */
 const WM_CLASS = "delamain-desktop";
 
@@ -84,12 +89,49 @@ function focusWindow(address) {
   });
 }
 
+function hyprlandClient() {
+  try {
+    const clients = JSON.parse(execFileSync("hyprctl", ["clients", "-j"], { timeout: 1500 }).toString());
+    return clients.find((client) => client.class === WM_CLASS) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function hyprlandMonitors() {
+  try {
+    return JSON.parse(execFileSync("hyprctl", ["monitors", "-j"], { timeout: 1500 }).toString());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Hyprland applies the `move` window rule unreliably on this setup, so the
+ * app re-checks its own position and asks the compositor to move it when it
+ * does not match the expected bottom-right corner.
+ */
+function ensurePlacement() {
+  const client = hyprlandClient();
+  if (!client?.at) return;
+  const monitor = hyprlandMonitors().find((entry) => entry.id === client.monitor);
+  if (!monitor) return;
+
+  const localX = monitor.width - 380 - 24;
+  const localY = monitor.height - 300 - 24;
+  const globalX = monitor.x + localX;
+  const globalY = monitor.y + localY;
+
+  if (Math.abs(client.at[0] - globalX) < 8 && Math.abs(client.at[1] - globalY) < 8) return;
+  hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`);
+}
+
 /* ---------------------------------------------------------------- window -- */
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 700,
-    height: 700,
+    width: 380,
+    height: 300,
     show: false,
     frame: false,
     transparent: true,
@@ -126,6 +168,16 @@ function createWindow() {
   win.once("ready-to-show", () => {
     win.showInactive();
     applyMode("passive");
+
+    // The compositor owns placement; nudge it if the rule did not take.
+    for (const delay of [500, 1500, 3000]) setTimeout(ensurePlacement, delay);
+  });
+
+  // If Hyprland focuses us while passive, give focus back immediately.
+  win.on("focus", () => {
+    if (mode === "passive" && previousFocus) {
+      setTimeout(() => focusWindow(previousFocus), 80);
+    }
   });
 
   win.on("closed", () => {

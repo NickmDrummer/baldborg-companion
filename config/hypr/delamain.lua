@@ -9,24 +9,22 @@ o.window("^delamain-desktop$", {
   no_shadow = true,
   no_anim = true,
   border_size = 0,
-  size = { 700, 700 },
-  move = { "monitor_w-window_w-48", "monitor_h-window_h-48" },
 })
 
-o.bind(
-  "SUPER + ALT + D",
-  "Delamain: modo interactivo",
-  os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain toggle"
-)
+-- Placement is a separate rule so it is evaluated after `float` is in effect.
+o.window("^delamain-desktop$", {
+  size = { 380, 300 },
+  move = { "(monitor_w-380-24)", "(monitor_h-300-24)" },
+})
 
-o.bind(
-  "SUPER + ALT + M",
-  "Delamain: silenciar voz",
-  os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain mute"
-)
+-- These keys belong to Delamain now: SUPER+SHIFT+D was Docker and
+-- SUPER+SHIFT+M was Music. Unbind first or Hyprland keeps the old action.
+hl.unbind("SUPER + SHIFT + D")
+hl.unbind("SUPER + SHIFT + H")
+hl.unbind("SUPER + SHIFT + M")
 
-o.bind(
-  "SUPER + ALT + H",
-  "Delamain: ocultar",
-  os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain hide"
-)
+local delamain = os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain"
+
+o.bind("SUPER + SHIFT + D", "Delamain: modo interactivo", delamain .. " toggle")
+o.bind("SUPER + SHIFT + M", "Delamain: silenciar voz", delamain .. " mute")
+o.bind("SUPER + SHIFT + H", "Delamain: ocultar", delamain .. " hide")

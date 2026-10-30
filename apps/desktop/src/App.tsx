@@ -5,7 +5,6 @@ type Mode = "passive" | "interactive";
 interface DelamainApi {
   getState: () => Promise<{ mode: Mode; muted: boolean }>;
   setMode: (mode: Mode) => Promise<Mode>;
-  setSize: (width: number, height: number) => Promise<void>;
   quit: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
@@ -32,7 +31,6 @@ export default function App() {
     });
 
     const offMode = api?.onModeChanged((next) => {
-      console.info("[delamain] mode ->", next);
       setMode(next);
       if (next === "passive") setDraft("");
     });
@@ -42,6 +40,18 @@ export default function App() {
       offMode?.();
       offMuted?.();
     };
+  }, []);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.info(
+        "[delamain] viewport",
+        window.innerWidth,
+        window.innerHeight,
+        "dpr",
+        window.devicePixelRatio,
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -65,6 +75,8 @@ export default function App() {
     setDraft("");
   };
 
+  const stateLabel = muted ? "VOZ SILENCIADA" : "ENLACE ABIERTO";
+
   return (
     <div className={`stage ${mode}`}>
       <div className="head" aria-hidden="true">
@@ -77,15 +89,20 @@ export default function App() {
         </div>
       </div>
 
-      <div className="statusline">
-        <span className="dot" />
-        DELAMAIN CORE · {mode === "interactive" ? "ENLACE ABIERTO" : "EN ESPERA"}
-        {muted && " · VOZ SILENCIADA"}
-      </div>
-
-      {mode === "interactive" && (
+      {mode === "passive" ? (
+        <div className="statusline">
+          <span className="dot" />
+          DELAMAIN CORE · {muted ? "SILENCIADO" : "EN ESPERA"}
+        </div>
+      ) : (
         <div className="console">
-          <div className="grip" />
+          <div className="grip">
+            <span className="dot" />
+            <span className="grip-title">DELAMAIN CORE</span>
+            <span className="grip-sep">·</span>
+            <span className="grip-state">{stateLabel}</span>
+            <span className="hint">Esc</span>
+          </div>
           <form onSubmit={submit}>
             <span className="prompt">&gt;</span>
             <input
@@ -96,7 +113,6 @@ export default function App() {
               spellCheck={false}
               autoComplete="off"
             />
-            <span className="hint">Esc para cerrar</span>
           </form>
         </div>
       )}

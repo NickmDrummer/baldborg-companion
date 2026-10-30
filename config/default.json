@@ -7,7 +7,7 @@
     "numCtx": 8192,
     "numPredict": 180,
     "keepAlive": "30m",
-    "temperature": 0.8
+    "temperature": 0.85
   },
   "voice": {
     "en": {
@@ -24,8 +24,9 @@
     }
   },
   "avatar": {
-    "window": { "width": 700, "height": 700 },
-    "headScale": 1.0,
+    "window": { "width": 380, "height": 300 },
+    "headBox": { "width": 120, "height": 200 },
+    "canvas": { "width": 200, "height": 220 },
     "glitchIntensity": 0.6,
     "color": "#7fd6ff"
   }
