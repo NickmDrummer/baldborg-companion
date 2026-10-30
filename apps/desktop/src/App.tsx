@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Avatar from "./avatar/Avatar";
 
 type Mode = "passive" | "interactive";
 
@@ -80,13 +81,7 @@ export default function App() {
   return (
     <div className={`stage ${mode}`}>
       <div className="head" aria-hidden="true">
-        <div className="head-glow" />
-        <div className="head-core">
-          <div className="eye left" />
-          <div className="eye right" />
-          <div className="mouth" />
-          <div className="scanlines" />
-        </div>
+        <Avatar />
       </div>
 
       {mode === "passive" ? (
