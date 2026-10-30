@@ -29,4 +29,7 @@ local delamain = os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain"
 o.bind("SUPER + SHIFT + D", "Delamain: modo interactivo", delamain .. " toggle")
 o.bind("SUPER + SHIFT + M", "Delamain: silenciar voz", delamain .. " mute")
 o.bind("SUPER + SHIFT + R", "Delamain: repetir voz", delamain .. " speak")
+
+-- Start the overlay with the session (single-instance safe).
+o.launch_on_start(os.getenv("HOME") .. "/Work/DelamainCompanion/bin/delamain-start")
 o.bind("SUPER + SHIFT + H", "Delamain: ocultar", delamain .. " hide")

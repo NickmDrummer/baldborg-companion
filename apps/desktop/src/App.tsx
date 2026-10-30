@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Avatar from "./avatar/Avatar";
 import type { Mood } from "./avatar/createAvatar";
+import { requestGlitch } from "./avatar/effects";
 import { createSpeaker } from "./voice/speaker";
 
 type Mode = "passive" | "interactive";
@@ -30,6 +31,7 @@ interface DelamainApi {
   cancelChat: () => Promise<void>;
   speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
   onVoiceReplay: (callback: () => void) => () => void;
+  onGlitch: (callback: () => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
@@ -113,6 +115,7 @@ export default function App() {
     });
     const offMuted = api?.onMutedChanged(setMuted);
 
+    const offGlitch = api?.onGlitch(() => requestGlitch());
     const offReplay = api?.onVoiceReplay(() => {
       if (lastReply.current) void speakText(lastReply.current);
     });
@@ -176,6 +179,7 @@ export default function App() {
       offMode?.();
       offMuted?.();
       offReplay?.();
+      offGlitch?.();
       offBrain?.();
     };
   }, []);

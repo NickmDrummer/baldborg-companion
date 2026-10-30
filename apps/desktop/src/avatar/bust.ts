@@ -1,144 +1,137 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 /**
- * Procedural bust: head, neck and shoulder stub, built so the whole silhouette
- * is 1.2 world units wide by 2.0 tall. With the camera framing in
- * createAvatar that maps exactly to the 120x200 px box in the UI, so swapping
- * the mesh later only requires keeping the same bounding box.
+ * Head rig built from a scanned human head (Lee Perry-Smith, CC-BY 3.0),
+ * re-materialed as a cyan hologram. The scan keeps the skull proportions that
+ * a procedural sphere gets wrong at this size, which is what made it read as
+ * an alien egg.
+ *
+ * The mesh is normalised to HEAD_WIDTH world units (120 px in the UI) and
+ * centred; the height follows the real proportions (~1.34).
  */
 
-const HEAD_BOTTOM = -0.25;
-const HEAD_TOP = 1.0;
-const NECK_BOTTOM = -0.6;
-const SHOULDER_BOTTOM = -1.0;
+export const HEAD_WIDTH = 1.2;
+export const MOUTH_UNIFORMS = { open: { value: 0 } };
 
-export const FACE = {
-  eyes: { x: 0.19, y: 0.55, z: 0.43 },
-  eyeWidth: 0.17,
-  eyeHeight: 0.05,
-  mouth: { y: 0.24, z: 0.43 },
-  mouthWidth: 0.26,
-  mouthHeight: 0.085,
-};
+/** 1 = the model faces +Z (as the three.js asset does). */
+const FORWARD = 1;
 
-export const MOUTH_UNIFORMS = {
-  open: { value: 0 },
-};
-
-export function createBust(): {
+export interface HeadRig {
   group: THREE.Group;
-  head: THREE.Mesh;
   eyes: THREE.Mesh[];
   mouth: THREE.Mesh;
   materials: THREE.ShaderMaterial[];
-} {
+  size: THREE.Vector3;
+}
+
+const MODEL_URL = new URL("models/head.glb", document.baseURI).href;
+
+/** Fraction of the bust height kept from the top (0.52 = head + jaw). */
+const HEAD_CUT = 0.46;
+
+/** Drop triangles that sit entirely below `y` (neck and shoulders). */
+function clipBelow(source: THREE.BufferGeometry, y: number): THREE.BufferGeometry {
+  const position = source.attributes.position;
+  const kept: number[] = [];
+
+  for (let i = 0; i < position.count; i += 3) {
+    const y0 = position.getY(i);
+    const y1 = position.getY(i + 1);
+    const y2 = position.getY(i + 2);
+    if (y0 < y && y1 < y && y2 < y) continue;
+    for (const index of [i, i + 1, i + 2]) {
+      kept.push(position.getX(index), position.getY(index), position.getZ(index));
+    }
+  }
+
+  const clipped = new THREE.BufferGeometry();
+  clipped.setAttribute("position", new THREE.Float32BufferAttribute(kept, 3));
+  clipped.computeVertexNormals();
+  return clipped;
+}
+
+function findMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((object) => {
+    if (found) return;
+    const candidate = object as THREE.Mesh;
+    if (candidate.isMesh) found = candidate;
+  });
+  return found;
+}
+
+export async function loadHead(): Promise<HeadRig> {
+  const loader = new GLTFLoader();
+  const gltf = await loader.loadAsync(MODEL_URL);
+
+  const mesh = findMesh(gltf.scene);
+  if (!mesh) throw new Error("head mesh not found in glb");
+
+  // The scan is a bust (head, neck and shoulders); keep only the head.
+  mesh.updateWorldMatrix(true, false);
+  let geometry = mesh.geometry.toNonIndexed();
+  geometry.applyMatrix4(mesh.matrixWorld);
+  geometry.computeBoundingBox();
+
+  const full = geometry.boundingBox!;
+  const cutY = full.min.y + (full.max.y - full.min.y) * HEAD_CUT;
+  geometry = clipBelow(geometry, cutY);
+  geometry.computeBoundingBox();
+
+  const box = geometry.boundingBox!;
+  const size = new THREE.Vector3();
+  const centre = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(centre);
+
+  // Centre at the origin, then normalise the width.
+  geometry.translate(-centre.x, -centre.y, -centre.z);
+  const scale = HEAD_WIDTH / size.x;
+  geometry.scale(scale, scale, scale);
+  geometry.computeVertexNormals();
+
+  const dims = size.clone().multiplyScalar(scale);
+
   const group = new THREE.Group();
-  const materials: THREE.ShaderMaterial[] = [];
-
   const headMaterial = createHologramMaterial(1.0);
-  materials.push(headMaterial);
-
-  const headGeometry = createHeadGeometry();
-  const head = new THREE.Mesh(headGeometry, headMaterial);
-  head.position.y = (HEAD_TOP + HEAD_BOTTOM) / 2;
+  const head = new THREE.Mesh(geometry, headMaterial);
+  head.frustumCulled = false;
   group.add(head);
 
-  const neck = new THREE.Mesh(createNeckGeometry(), createHologramMaterial(0.75));
-  materials.push(neck.material as THREE.ShaderMaterial);
-  group.add(neck);
-
-  const shoulders = new THREE.Mesh(createShoulderGeometry(), createHologramMaterial(0.6));
-  materials.push(shoulders.material as THREE.ShaderMaterial);
-  group.add(shoulders);
-
+  // Eyes and mouth sit on the front of the face, positioned from head
+  // proportions rather than UV coordinates.
   const eyeMaterial = createFeatureMaterial();
   eyeMaterial.uniforms.uOpen.value = 1;
   const eyes = [-1, 1].map((side) => {
-    const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), eyeMaterial.clone());
-    (eye.material as THREE.ShaderMaterial).uniforms.uOpen.value = 1;
-    eye.scale.set(FACE.eyeWidth, FACE.eyeHeight, 1);
-    eye.position.set(side * FACE.eyes.x, FACE.eyes.y, FACE.eyes.z);
-    eye.rotation.z = side * -0.06;
+    const material = eyeMaterial.clone();
+    material.uniforms.uOpen.value = 1;
+    const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    eye.scale.set(dims.x * 0.15, dims.y * 0.035, 1);
+    eye.position.set(side * dims.x * 0.17, dims.y * 0.05, FORWARD * (dims.z * 0.34));
+    eye.rotation.z = side * -0.07;
     group.add(eye);
     return eye;
   });
   eyeMaterial.dispose();
-  materials.push(...eyes.map((eye) => eye.material as THREE.ShaderMaterial));
 
   const mouthMaterial = createFeatureMaterial();
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(FACE.mouthWidth, FACE.mouthHeight, 1);
-  mouth.position.set(0, FACE.mouth.y, FACE.mouth.z);
+  mouth.scale.set(dims.x * 0.13, dims.y * 0.026, 1);
+  mouth.position.set(0, -dims.y * 0.255, FORWARD * (dims.z * 0.35));
   group.add(mouth);
-  materials.push(mouthMaterial);
 
-  // Fit the whole bust to the 120x200 px box: 2.0 units tall, silhouette
-  // centred on the origin so gestures rotate around the middle of the chest.
-  const bounds = new THREE.Box3().setFromObject(group);
-  const size = new THREE.Vector3();
-  const centre = new THREE.Vector3();
-  bounds.getSize(size);
-  bounds.getCenter(centre);
-  const scale = 2.0 / size.y;
-  group.scale.setScalar(scale);
-  group.position.set(-centre.x * scale, -centre.y * scale, -centre.z * scale);
-
-  return { group, head, eyes, mouth, materials };
+  return {
+    group,
+    eyes,
+    mouth,
+    materials: [headMaterial, ...eyes.map((eye) => eye.material as THREE.ShaderMaterial), mouthMaterial],
+    size: dims,
+  };
 }
 
-/** Sphere sculpted into a skull with a tapered jaw and a subtle chin. */
-function createHeadGeometry(): THREE.BufferGeometry {
-  const geometry = new THREE.SphereGeometry(1, 64, 48);
-  const position = geometry.attributes.position as THREE.BufferAttribute;
-
-  for (let i = 0; i < position.count; i += 1) {
-    const x = position.getX(i);
-    let y = position.getY(i);
-    let z = position.getZ(i);
-
-    // Skull proportions: narrower than tall, slightly flattened from the side.
-    let px = x * 0.56;
-    let pz = z * 0.47;
-    let py = y * 0.625;
-
-    // Jaw taper: the lower half narrows towards the chin.
-    const jaw = THREE.MathUtils.smoothstep(-py, 0, 0.625);
-    const taper = 1 - 0.24 * jaw;
-    px *= taper;
-    pz *= taper;
-
-    // Nudge the chin forward and flatten the back of the skull a little.
-    if (pz > 0) pz += 0.045 * jaw * jaw;
-    else pz *= 0.94;
-
-    // Brow ridge: a soft bump above the eyes.
-    const brow = Math.exp(-Math.pow((py - 0.18) / 0.12, 2)) * Math.exp(-Math.pow(px / 0.4, 2));
-    if (pz > 0) pz += 0.012 * brow;
-
-    position.setXYZ(i, px, py, pz);
-  }
-
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function createNeckGeometry(): THREE.BufferGeometry {
-  const height = HEAD_BOTTOM - NECK_BOTTOM + 0.12;
-  const geometry = new THREE.CylinderGeometry(0.16, 0.21, height, 40, 1, true);
-  geometry.translate(0, (HEAD_BOTTOM + NECK_BOTTOM) / 2 - 0.02, 0);
-  return geometry;
-}
-
-function createShoulderGeometry(): THREE.BufferGeometry {
-  const geometry = new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
-  geometry.scale(0.6, 0.32, 0.34);
-  geometry.rotateX(Math.PI);
-  geometry.translate(0, SHOULDER_BOTTOM + 0.32, 0);
-  return geometry;
-}
-
-/** Cyan hologram: fresnel rim, horizontal bands and a faint inner glow. */
+/** Cyan hologram: fresnel rim, scan bands, panel seams and speckle. */
 function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -154,14 +147,12 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
       varying vec3 vNormal;
       varying vec3 vView;
       varying vec3 vLocal;
-      varying float vWorldY;
 
       void main() {
         vec4 world = modelMatrix * vec4(position, 1.0);
         vNormal = normalize(mat3(modelMatrix) * normal);
         vView = normalize(cameraPosition - world.xyz);
         vLocal = position;
-        vWorldY = world.y;
         gl_Position = projectionMatrix * viewMatrix * world;
       }
     `,
@@ -169,7 +160,6 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
       varying vec3 vNormal;
       varying vec3 vView;
       varying vec3 vLocal;
-      varying float vWorldY;
 
       uniform vec3 uColor;
       uniform float uIntensity;
@@ -177,21 +167,26 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
 
       void main() {
         float facing = abs(dot(normalize(vNormal), normalize(vView)));
-        float rim = pow(1.0 - facing, 2.4);
+        float rim = pow(1.0 - facing, 3.0);
 
-        // Horizontal scan bands travelling upwards, in object space.
-        float bands = fract(vLocal.y * 46.0 - uTime * 0.35);
+        // Horizontal scan bands travelling upwards.
+        float bands = fract(vLocal.y * 42.0 - uTime * 0.35);
         float band = smoothstep(0.0, 0.45, bands) * smoothstep(1.0, 0.55, bands);
 
-        // Sparse signal noise.
+        // Robotic panel seams: brow line and jaw line.
+        float brow = smoothstep(0.006, 0.0, abs(vLocal.y - 0.30));
+        float jaw = smoothstep(0.006, 0.0, abs(vLocal.y + 0.34));
+        float seam = clamp(brow + jaw, 0.0, 1.0);
+
         float noise = fract(sin(dot(vLocal.xz * 48.0 + uTime, vec2(12.9898, 78.233))) * 43758.5453);
         float speckle = step(0.985, noise) * 0.6;
 
-        float glow = 0.38 + 1.35 * rim;
-        vec3 color = uColor * (glow * (0.6 + 0.4 * band) + speckle);
-        float alpha = clamp((0.2 + 0.85 * rim) * uIntensity, 0.0, 1.0);
+        float glow = 0.42 + 0.95 * rim;
+        vec3 color = uColor * (glow * (0.6 + 0.4 * band) + speckle) + uColor * seam * 0.55;
+        float alpha = clamp((0.2 + 0.75 * rim) * uIntensity + seam * 0.2, 0.0, 1.0);
+        alpha *= smoothstep(-0.80, -0.66, vLocal.y);
 
-        gl_FragColor = vec4(color * alpha, alpha);
+        gl_FragColor = vec4(uColor, alpha);
       }
     `,
   });
@@ -221,7 +216,6 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uniform float uOpen;
       uniform float uBlink;
 
-      // Rounded bar; uOpen stretches it vertically for the mouth.
       float sdRound(vec2 p, vec2 halfSize, float r) {
         vec2 q = abs(p) - halfSize + r;
         return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
@@ -232,7 +226,7 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
         float height = mix(0.18, 1.0, uOpen) * uBlink;
         float d = sdRound(p, vec2(0.42, 0.5 * height), 0.28);
         float core = smoothstep(0.06, -0.06, abs(d));
-        float halo = smoothstep(0.35, 0.0, abs(d)) * 0.25;
+        float halo = smoothstep(0.28, 0.0, abs(d)) * 0.2;
         float alpha = clamp(core + halo, 0.0, 1.0);
         gl_FragColor = vec4(uColor, alpha);
       }

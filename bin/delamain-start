@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Start the Delamain overlay in the current graphical session.
+# Used by Hyprland's autostart and safe to run by hand: the Electron
+# single-instance lock makes a second launch a no-op.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/delamain/app.log"
+mkdir -p "$(dirname "$LOG")"
+
+cd "$ROOT/apps/desktop"
+
+if [[ ! -x node_modules/.bin/electron ]]; then
+  echo "electron is not installed; run: npm install && npm run build" >&2
+  exit 1
+fi
+
+exec env ELECTRON_OZONE_PLATFORM_HINT=auto ./node_modules/.bin/electron . >>"$LOG" 2>&1

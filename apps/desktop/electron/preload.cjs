@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld("delamain", {
     ipcRenderer.on("audio:muted", listener);
     return () => ipcRenderer.removeListener("audio:muted", listener);
   },
+  onGlitch: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("fx:glitch", listener);
+    return () => ipcRenderer.removeListener("fx:glitch", listener);
+  },
   onVoiceReplay: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("voice:replay", listener);

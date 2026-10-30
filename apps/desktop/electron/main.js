@@ -485,6 +485,9 @@ function handleCommand(command) {
     case "speak":
       win?.webContents.send("voice:replay");
       break;
+    case "glitch":
+      win?.webContents.send("fx:glitch");
+      break;
     case "show":
       win?.showInactive();
       break;

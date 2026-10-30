@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { createBust, MOUTH_UNIFORMS } from "./bust";
+import { loadHead, MOUTH_UNIFORMS } from "./bust";
+import { onGlitchRequest } from "./effects";
 import { onMouthLevel } from "./level";
 
 export type Mood = "neutral" | "wry" | "concerned" | "stern" | "amused" | "ominous" | "pleased";
@@ -35,8 +36,19 @@ export function createAvatar(container: HTMLElement): AvatarApi {
   );
   camera.position.z = 3;
 
-  const bust = createBust();
-  scene.add(bust.group);
+  // The head loads asynchronously; the rig exists first so sway/bob work
+  // while the mesh is still in flight.
+  const rig = new THREE.Group();
+  scene.add(rig);
+  let materials: THREE.ShaderMaterial[] = [];
+
+  loadHead()
+    .then((head) => {
+      rig.add(head.group);
+      materials = head.materials;
+      console.info(`[delamain] head loaded: ${head.size.x.toFixed(2)}x${head.size.y.toFixed(2)}`);
+    })
+    .catch((error) => console.warn("[delamain] head load failed:", error.message));
 
   // Render the scene into a texture so the glitch pass can distort it.
   const target = new THREE.WebGLRenderTarget(width, height, {
@@ -96,6 +108,10 @@ export function createAvatar(container: HTMLElement): AvatarApi {
         // Scanlines in screen space.
         color *= 0.84 + 0.16 * sin(vUv.y * uResolution.y * 3.14159);
 
+        // Some displaced bands turn red, like a failing signal channel.
+        float redGate = step(0.72, seed) * gate;
+        color = mix(color, vec3(1.0, 0.09, 0.06), redGate * uGlitch);
+
         // Occasional light sweep.
         float sweep = smoothstep(0.03, 0.0, abs(fract(vUv.y + uTime * 0.1) - 0.5));
         color += vec3(0.04, 0.1, 0.14) * sweep * (0.3 + uGlitch);
@@ -118,6 +134,9 @@ export function createAvatar(container: HTMLElement): AvatarApi {
   let mouthLevel = 0;
   const stopMouth = onMouthLevel((value) => {
     mouthLevel = value;
+  });
+  const stopGlitch = onGlitchRequest(() => {
+    glitchBurst = 0.4;
   });
   let mood: Mood = "neutral";
   let blink = 1;
@@ -176,12 +195,12 @@ export function createAvatar(container: HTMLElement): AvatarApi {
 
     const pose = moodPose[mood];
     const sway = Math.sin(time * 0.7) * 0.035;
-    bust.group.rotation.y = pose.yaw + sway;
-    bust.group.rotation.z = pose.tilt + Math.sin(time * 0.5) * 0.012;
-    bust.group.rotation.x = Math.sin(time * 0.9) * 0.01;
-    bust.group.position.y = Math.sin(time * 1.1) * 0.008;
+    rig.rotation.y = pose.yaw + sway;
+    rig.rotation.z = pose.tilt + Math.sin(time * 0.5) * 0.012;
+    rig.rotation.x = Math.sin(time * 0.9) * 0.01;
+    rig.position.y = Math.sin(time * 1.1) * 0.008;
 
-    for (const material of bust.materials) {
+    for (const material of materials) {
       if (material.uniforms.uTime) material.uniforms.uTime.value = time;
       if (material.uniforms.uBlink) material.uniforms.uBlink.value = blink * pose.eye;
     }
@@ -227,6 +246,7 @@ export function createAvatar(container: HTMLElement): AvatarApi {
     dispose() {
       disposed = true;
       stopMouth();
+      stopGlitch();
       observer.disconnect();
       renderer.dispose();
       target.dispose();
