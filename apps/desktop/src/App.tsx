@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Avatar from "./avatar/Avatar";
+import type { HeadMaterial } from "./avatar/bust";
 import type { Mood } from "./avatar/createAvatar";
 import { requestGlitch } from "./avatar/effects";
 import { createSpeaker } from "./voice/speaker";
@@ -24,7 +25,12 @@ interface BrainEvent {
 }
 
 interface DelamainApi {
-  getState: () => Promise<{ mode: Mode; muted: boolean; autoSpeak?: boolean }>;
+  getState: () => Promise<{
+    mode: Mode;
+    muted: boolean;
+    autoSpeak?: boolean;
+    material?: HeadMaterial;
+  }>;
   setMode: (mode: Mode) => Promise<Mode>;
   quit: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
@@ -62,6 +68,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [mood, setMood] = useState<Mood>("neutral");
+  const [material, setMaterial] = useState<HeadMaterial>("normal");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -94,6 +101,7 @@ export default function App() {
       setMode(state.mode);
       setMuted(state.muted);
       autoSpeakRef.current = state.autoSpeak ?? true;
+      if (state.material) setMaterial(state.material);
     });
 
     api?.getHistory().then((history) => {
@@ -225,7 +233,7 @@ export default function App() {
   return (
     <div className={`stage ${mode}`}>
       <div className="head" aria-hidden="true">
-        <Avatar mood={mood} />
+        <Avatar mood={mood} material={material} />
       </div>
 
       {mode === "passive" ? (

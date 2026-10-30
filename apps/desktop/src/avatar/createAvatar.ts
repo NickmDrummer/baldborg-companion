@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { loadHead, MOUTH_UNIFORMS } from "./bust";
+import { loadHead, MOUTH_UNIFORMS, type HeadMaterial } from "./bust";
 import { onGlitchRequest } from "./effects";
 import { onMouthLevel } from "./level";
 
@@ -14,7 +14,7 @@ export interface AvatarApi {
 
 const VIEW_HEIGHT = 2.2;
 
-export function createAvatar(container: HTMLElement): AvatarApi {
+export function createAvatar(container: HTMLElement, material: HeadMaterial = "normal"): AvatarApi {
   const width = container.clientWidth || 200;
   const height = container.clientHeight || 220;
 
@@ -42,7 +42,7 @@ export function createAvatar(container: HTMLElement): AvatarApi {
   scene.add(rig);
   let materials: THREE.ShaderMaterial[] = [];
 
-  loadHead()
+  loadHead(material)
     .then((head) => {
       rig.add(head.group);
       materials = head.materials;

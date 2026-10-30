@@ -32,6 +32,16 @@ app.commandLine.appendSwitch("force-device-scale-factor", "1");
 const WM_CLASS = "delamain-desktop";
 
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
+const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
+
+function avatarMaterial() {
+  try {
+    return JSON.parse(readFileSync(CONFIG_PATH, "utf8")).avatar?.material ?? "normal";
+  } catch {
+    return "normal";
+  }
+}
+
 const SIZES = {
   passive: { width: 200, height: 270 },
   interactive: { width: 380, height: 460 },
@@ -542,6 +552,7 @@ function registerIpc() {
     mode,
     muted: state.muted,
     autoSpeak: autoSpeakEnabled(),
+    material: avatarMaterial(),
   }));
   ipcMain.handle("app:set-mode", (_event, next) => {
     applyMode(next === "interactive" ? "interactive" : "passive");
