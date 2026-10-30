@@ -18,6 +18,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cancelChat, getHistory, resetHistory, startChat } from "./brain.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -32,7 +33,7 @@ const WM_CLASS = "delamain-desktop";
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
 const SIZES = {
   passive: { width: 200, height: 270 },
-  interactive: { width: 380, height: 300 },
+  interactive: { width: 380, height: 460 },
 };
 /** Gap between the overlay and the monitor edge, in px. */
 const EDGE_MARGIN = 24;
@@ -434,6 +435,13 @@ function updateTrayMenu() {
         accelerator: "Super+Alt+M",
         click: () => setMuted(!state.muted),
       },
+      {
+        label: "Olvidar conversación",
+        click: () => {
+          resetHistory();
+          win?.webContents.send("brain:event", { type: "reset" });
+        },
+      },
       { type: "separator" },
       { label: "Salir", click: () => app.quit() },
     ]),
@@ -468,6 +476,10 @@ function handleCommand(command) {
       break;
     case "mute":
       setMuted(!state.muted);
+      break;
+    case "forget":
+      resetHistory();
+      win?.webContents.send("brain:event", { type: "reset" });
       break;
     case "show":
       win?.showInactive();
@@ -525,6 +537,17 @@ function registerIpc() {
     return mode;
   });
   ipcMain.handle("app:quit", () => app.quit());
+
+  ipcMain.handle("brain:chat", (_event, text) => {
+    if (typeof text !== "string" || !text.trim()) return;
+    startChat(text.trim(), (event) => win?.webContents.send("brain:event", event));
+  });
+  ipcMain.handle("brain:cancel", () => cancelChat());
+  ipcMain.handle("brain:history", () => getHistory());
+  ipcMain.handle("brain:reset", () => {
+    resetHistory();
+    return [];
+  });
 }
 
 /* --------------------------------------------------------------- bootstrap */

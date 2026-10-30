@@ -58,7 +58,7 @@ floating windows, and keeping it separate guarantees it is evaluated after
 parsed as literal strings and silently ignored.
 
 `size` is only the initial geometry (passive mode). The app resizes its own
-surface: 200x270 for the head alone, 380x300 when the chat opens.
+surface: 200x270 for the head alone, 380x460 when the chat opens.
 
 ## Keybindings and why they do not use Electron
 
@@ -115,7 +115,7 @@ delamain-desktop at=[1606, 756] size=[200, 270] pinned=true
 with the chat open:
 
 ```
-delamain-desktop at=[1516, 756] size=[380, 300] pinned=true
+delamain-desktop at=[1516, 596] size=[380, 460] pinned=true
 ```
 
 The head keeps its centre and top edge between both states; only the surface

@@ -1,14 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import Avatar from "./avatar/Avatar";
+import type { Mood } from "./avatar/createAvatar";
 
 type Mode = "passive" | "interactive";
+type Role = "user" | "assistant" | "error";
+
+interface ChatEntry {
+  id: number;
+  role: Role;
+  text: string;
+  mood?: Mood;
+}
+
+interface BrainEvent {
+  type: "chunk" | "done" | "error" | "reset";
+  text?: string;
+  mood?: Mood;
+  message?: string;
+  hint?: string;
+  cancelled?: boolean;
+}
 
 interface DelamainApi {
   getState: () => Promise<{ mode: Mode; muted: boolean }>;
   setMode: (mode: Mode) => Promise<Mode>;
   quit: () => Promise<void>;
+  sendMessage: (text: string) => Promise<void>;
+  cancelChat: () => Promise<void>;
+  getHistory: () => Promise<{ role: Role; content: string }[]>;
+  resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
+  onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
 declare global {
@@ -18,17 +41,41 @@ declare global {
 }
 
 const api = window.delamain;
+const TAG_RE = /^\s*\[\[mood:\s*([a-z]+)\s*\]\]\s*/i;
+
+/** Hide the machine-readable mood tag while the reply streams in. */
+function visibleText(raw: string) {
+  return raw.replace(TAG_RE, "");
+}
+
+let nextId = 1;
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("passive");
   const [muted, setMuted] = useState(false);
+  const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mood, setMood] = useState<Mood>("neutral");
+
   const inputRef = useRef<HTMLInputElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const streamingId = useRef<number | null>(null);
 
   useEffect(() => {
     api?.getState().then((state) => {
       setMode(state.mode);
       setMuted(state.muted);
+    });
+
+    api?.getHistory().then((history) => {
+      setEntries(
+        history.map((entry) => ({
+          id: nextId++,
+          role: entry.role,
+          text: entry.content,
+        })),
+      );
     });
 
     const offMode = api?.onModeChanged((next) => {
@@ -37,57 +84,111 @@ export default function App() {
     });
     const offMuted = api?.onMutedChanged(setMuted);
 
+    const offBrain = api?.onBrainEvent((event) => {
+      if (event.type === "reset") {
+        streamingId.current = null;
+        setBusy(false);
+        setEntries([]);
+        return;
+      }
+
+      if (event.type === "chunk") {
+        const id = streamingId.current;
+        if (id === null) return;
+        setEntries((current) =>
+          current.map((entry) =>
+            entry.id === id ? { ...entry, text: entry.text + (event.text ?? "") } : entry,
+          ),
+        );
+        return;
+      }
+
+      if (event.type === "done") {
+        const id = streamingId.current;
+        streamingId.current = null;
+        setBusy(false);
+        if (event.mood) setMood(event.mood);
+        setEntries((current) =>
+          current
+            .map((entry) =>
+              entry.id === id
+                ? { ...entry, text: event.cancelled ? entry.text : (event.text ?? entry.text) }
+                : entry,
+            )
+            .filter((entry) => entry.role !== "assistant" || entry.text.trim().length > 0),
+        );
+        return;
+      }
+
+      if (event.type === "error") {
+        const id = streamingId.current;
+        streamingId.current = null;
+        setBusy(false);
+        setEntries((current) =>
+          current.map((entry) =>
+            entry.id === id
+              ? { ...entry, role: "error" as Role, text: event.hint ?? "Error de enlace." }
+              : entry,
+          ),
+        );
+      }
+    });
+
     return () => {
       offMode?.();
       offMuted?.();
+      offBrain?.();
     };
   }, []);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.info(
-        "[delamain] viewport",
-        window.innerWidth,
-        window.innerHeight,
-        "dpr",
-        window.devicePixelRatio,
-      );
-    }
-  }, []);
+    if (mode !== "interactive") return;
+    inputRef.current?.focus();
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [mode, entries]);
 
   useEffect(() => {
-    if (mode === "interactive") inputRef.current?.focus();
-
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && mode === "interactive") {
-        setDraft("");
-        api?.setMode("passive");
+      if (event.key !== "Escape" || mode !== "interactive") return;
+      if (busy) {
+        window.delamain?.cancelChat();
+        return;
       }
+      setDraft("");
+      window.delamain?.setMode("passive");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode]);
+  }, [mode, busy]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!draft.trim()) return;
-    // Phase 3 wires this to the brain; for now it only proves the loop.
-    console.info("[delamain] pending brain wiring:", draft.trim());
-    setDraft("");
-  };
+    const text = draft.trim();
+    if (!text || busy) return;
 
-  const stateLabel = muted ? "VOZ SILENCIADA" : "ENLACE ABIERTO";
+    const assistantId = nextId++;
+    streamingId.current = assistantId;
+    setEntries((current) => [
+      ...current,
+      { id: nextId++, role: "user", text },
+      { id: assistantId, role: "assistant", text: "" },
+    ]);
+    setDraft("");
+    setBusy(true);
+    api?.sendMessage(text);
+  };
 
   return (
     <div className={`stage ${mode}`}>
       <div className="head" aria-hidden="true">
-        <Avatar />
+        <Avatar mood={mood} />
       </div>
 
       {mode === "passive" ? (
         <div className="statusline">
           <span className="dot" />
-          DELAMAIN CORE · {muted ? "SILENCIADO" : "EN ESPERA"}
+          DELAMAIN CORE · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
         </div>
       ) : (
         <div className="console">
@@ -95,18 +196,41 @@ export default function App() {
             <span className="dot" />
             <span className="grip-title">DELAMAIN CORE</span>
             <span className="grip-sep">·</span>
-            <span className="grip-state">{stateLabel}</span>
+            <span className="grip-state">
+              {muted ? "VOZ SILENCIADA" : busy ? "PROCESANDO" : "ENLACE ABIERTO"}
+            </span>
             <span className="hint">Esc</span>
           </div>
+
+          <div className="transcript" ref={transcriptRef}>
+            {entries.length === 0 && (
+              <p className="entry hint-line">
+                Sistema en línea. Escriba su consulta y el núcleo responderá.
+              </p>
+            )}
+            {entries.map((entry) => (
+              <p key={entry.id} className={`entry ${entry.role}`}>
+                <span className="mark">{entry.role === "user" ? ">" : "◆"}</span>
+                <span className="body">
+                  {entry.role === "assistant" ? visibleText(entry.text) : entry.text}
+                  {entry.role === "assistant" && busy && entry.id === streamingId.current && (
+                    <span className="cursor">▌</span>
+                  )}
+                </span>
+              </p>
+            ))}
+          </div>
+
           <form onSubmit={submit}>
             <span className="prompt">&gt;</span>
             <input
               ref={inputRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Escriba su consulta, señor."
+              placeholder={busy ? "El núcleo está respondiendo…" : "Escriba su consulta, señor."}
               spellCheck={false}
               autoComplete="off"
+              disabled={busy}
             />
           </form>
         </div>
