@@ -51,6 +51,8 @@ function loadState() {
       count: 0,
       lastFired: {},
       lastInteraction: 0,
+      scores: {},
+      pending: null,
       ...JSON.parse(readFileSync(STATE_FILE, "utf8")),
     };
   } catch {
@@ -147,6 +149,20 @@ function buildContext() {
   };
 }
 
+/**
+ * A beat counts as engaged when the client talks to the assistant shortly
+ * after it; otherwise it is ignored and loses weight over time.
+ */
+function resolvePending(engaged) {
+  if (!state.pending) return;
+  const age = Date.now() - (state.pending.at ?? 0);
+  state.scores = state.scores ?? {};
+  const id = state.pending.id;
+  const delta = engaged && age < 15 * 60_000 ? 1 : -0.6;
+  state.scores[id] = Math.max(-4, Math.min(4, (state.scores[id] ?? 0) + delta));
+  state.pending = null;
+}
+
 function pickBeat(ctx) {
   const now = Date.now();
   const eligible = BEATS.filter((beat) => {
@@ -155,10 +171,13 @@ function pickBeat(ctx) {
   });
   if (!eligible.length) return null;
 
-  const total = eligible.reduce((sum, beat) => sum + beat.weight, 0);
+  const weightOf = (beat) =>
+    Math.max(0.2, beat.weight * (1 + (state.scores?.[beat.id] ?? 0) * 0.25));
+
+  const total = eligible.reduce((sum, beat) => sum + weightOf(beat), 0);
   let roll = Math.random() * total;
   for (const beat of eligible) {
-    roll -= beat.weight;
+    roll -= weightOf(beat);
     if (roll <= 0) return beat;
   }
   return eligible[eligible.length - 1];
@@ -186,12 +205,16 @@ function gatesPass() {
 }
 
 function fire() {
+  // The previous beat was not answered: let it lose weight.
+  resolvePending(false);
+
   const ctx = buildContext();
   const beat = pickBeat(ctx);
   if (!beat) return null;
 
   const text = beat.text(ctx);
   state.lastFired[beat.id] = Date.now();
+  state.pending = { id: beat.id, at: Date.now() };
   state.count += 1;
   saveState();
   send({ type: "beat", id: beat.id, text, mood: beat.mood, speak: config().speak });
@@ -232,6 +255,7 @@ export function stopBeats() {
 
 /** Called whenever the client talks to the assistant: postpone the next beat. */
 export function noteInteraction() {
+  resolvePending(true);
   state.lastInteraction = Date.now();
   saveState();
   schedule();
