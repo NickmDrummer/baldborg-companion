@@ -46,6 +46,16 @@ if [[ -d "$HOME/.config/omarchy" ]]; then
   install_hook battery-low "$REPO/config/omarchy/battery-low.sh" baldborg-battery.sh
 fi
 
+# Launcher entry and icon, so the app can be opened from the menu.
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+APPS_DIR="$HOME/.local/share/applications"
+mkdir -p "$ICON_DIR" "$APPS_DIR"
+cp "$REPO/assets/icon/baldborg.png" "$ICON_DIR/baldborg.png"
+sed -e "s|__REPO__|$REPO|g" -e "s|__ICON__|baldborg|g" \
+  "$REPO/config/baldborg.desktop" > "$APPS_DIR/baldborg.desktop"
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true
+echo "installed launcher entry"
+
 # User tools directory with a documented example.
 TOOLS_DIR="$HOME/.config/baldborg/tools"
 if [[ -d "$HOME/.config/baldborg" || -d "$HOME/.config" ]]; then

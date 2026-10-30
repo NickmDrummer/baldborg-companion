@@ -350,6 +350,7 @@ export async function startChat(text, sink, modelOverride) {
   ];
 
   let finalText = "";
+  let reminderToolRan = false;
 
   try {
     const reminder = routeReminder(text);
@@ -379,6 +380,8 @@ export async function startChat(text, sink, modelOverride) {
         const name = call.function?.name ?? "unknown";
         sink({ type: "tool", name, status: "running" });
 
+        if (name === "set_reminder") reminderToolRan = true;
+
         let outcome;
         try {
           const prepared = prepareTool(name, call.function?.arguments);
@@ -400,6 +403,19 @@ export async function startChat(text, sink, modelOverride) {
         sink({ type: "tool", name, status: "done" });
         messages.push({ role: "tool", content: JSON.stringify(outcome) });
       }
+    }
+
+    // Guard against claiming a reminder that was never created.
+    const reminderIntent =
+      /(recu[eé]rdame|recordarme|recordatorio|remind me|set(?:e)? (?:me )?a reminder)/i.test(text);
+    const claimsDone =
+      /\b(programad[oa]|anotad[oa]|guardad[oa]|scheduled|noted|created|set up)\b/i.test(parsed.text);
+    if (reminderIntent && !reminderToolRan && claimsDone) {
+      finalText =
+        detectLanguage(text) === "en"
+          ? '[[mood:stern]] Nothing was scheduled, sir. I need a concrete time: "in 20 minutes" or "at 18:30".'
+          : "[[mood:stern]] No he programado nada, señor. Necesito una hora concreta: «en 20 minutos» o «a las 18:30».";
+      parsed = parseMood(finalText);
     }
 
     if (!finalText.trim()) {

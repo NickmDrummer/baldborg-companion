@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Baldborg
+GenericName=Holographic companion
+Comment=Local AI companion with a holographic head
+Exec="__REPO__/bin/baldborg-start"
+Icon=__ICON__
+Terminal=false
+Categories=Utility;
+StartupNotify=false

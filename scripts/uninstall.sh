@@ -21,6 +21,9 @@ rm -f "$HOME/.config/omarchy/hooks/post-update.d/baldborg-update.sh"
 rm -f "$HOME/.config/omarchy/hooks/battery-low.d/baldborg-battery.sh"
 hyprctl reload >/dev/null 2>&1 || true
 
+rm -f "$HOME/.local/share/applications/baldborg.desktop"
+rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/baldborg.png"
+
 PLUGIN_ID="nickmdrummer.baldborg"
 rm -rf "$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
