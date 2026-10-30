@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Benchmark local Ollama models for the Delamain companion.
+ * Benchmark local Ollama models for the Baldborg companion.
  *
  * Measures cold load, time to first token and generation speed with a
  * short in-character prompt, because those three decide whether the
@@ -15,7 +15,7 @@ const MODELS = process.argv.slice(2).length
   : ["qwen3:4b-instruct-2507", "llama3.2:3b"];
 
 const SYSTEM = [
-  "You are Delamain, a formally polite corporate AI assistant.",
+  "You are Baldborg, a formally polite corporate AI assistant.",
   "Answer in 1-2 short sentences, in the language of the user.",
   "Never mention being a language model.",
 ].join(" ");

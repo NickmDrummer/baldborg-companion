@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Start the Delamain overlay in the current graphical session.
+# Start the Baldborg overlay in the current graphical session.
 # Used by Hyprland's autostart and safe to run by hand: the Electron
 # single-instance lock makes a second launch a no-op.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOG="${XDG_STATE_HOME:-$HOME/.local/state}/delamain/app.log"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/baldborg/app.log"
 mkdir -p "$(dirname "$LOG")"
 
 cd "$ROOT/apps/desktop"

@@ -1,5 +1,5 @@
 /**
- * Electron main process for the Delamain companion overlay.
+ * Electron main process for the Baldborg companion overlay.
  *
  * Phase 1 responsibilities:
  *  - transparent, frameless, always-on-top window that never steals focus
@@ -7,9 +7,11 @@
  *  - control channel over a UNIX socket, driven by Hyprland keybindings
  *
  * Wayland owns window placement and focus, so the compositor (Hyprland) is the
- * authority: position and sizing come from config/hypr/delamain.lua, and focus
+ * authority: position and sizing come from config/hypr/baldborg.lua, and focus
  * is handed back with a Hyprland dispatcher instead of win.blur().
  */
+
+import "./migrate.js";
 
 import { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage } from "electron";
 import { execFile, execFileSync } from "node:child_process";
@@ -19,6 +21,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, resetHistory, startChat, warmup } from "./brain.js";
+import { forceBeat, noteInteraction, startBeats, stopBeats } from "./beats.js";
 import { autoSpeakEnabled, stopVoice, synthesize, voiceStatus } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,7 +32,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.commandLine.appendSwitch("force-device-scale-factor", "1");
 
 /** Hyprland window class; it comes from package.json "name". */
-const WM_CLASS = "delamain-desktop";
+const WM_CLASS = "baldborg-desktop";
 
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
@@ -43,13 +46,13 @@ function avatarMaterial() {
 }
 
 const SIZES = {
-  passive: { width: 200, height: 270 },
+  passive: { width: 200, height: 330 },
   interactive: { width: 380, height: 460 },
 };
 /** Gap between the overlay and the monitor edge, in px. */
 const EDGE_MARGIN = 24;
 
-const STATE_DIR = join(homedir(), ".config", "delamain");
+const STATE_DIR = join(homedir(), ".config", "baldborg");
 const STATE_FILE = join(STATE_DIR, "state.json");
 const CONTROL_SOCKET = join(STATE_DIR, "control.sock");
 
@@ -130,7 +133,7 @@ function restoreNoWarps() {
       timeout: 1500,
     });
   } catch {
-    console.warn("[delamain] could not restore cursor:no_warps");
+    console.warn("[baldborg] could not restore cursor:no_warps");
   }
 }
 
@@ -309,7 +312,7 @@ function createWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     focusable: true,
-    title: "Delamain",
+    title: "Baldborg",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -340,6 +343,12 @@ function createWindow() {
   // Keep the chat input focused whenever the compositor focuses the window.
   win.on("focus", () => win?.webContents.send("window:focus"));
 
+  startBeats({
+    send: (event) => win?.webContents.send("beat:event", event),
+    isMuted: () => state.muted,
+    getMode: () => mode,
+  });
+
   win.on("closed", () => {
     win = null;
   });
@@ -356,7 +365,7 @@ function createWindow() {
     }
   });
   win.webContents.on("preload-error", (_event, path, error) => {
-    console.error(`[delamain] preload failed (${path}):`, error.message);
+    console.error(`[baldborg] preload failed (${path}):`, error.message);
   });
 }
 
@@ -403,6 +412,9 @@ async function applyMode(next) {
 
     await setOverlayFocusable(true);
     await focusOverlay();
+    // Make sure the chat input owns the keyboard, even if the window was
+    // already focused (no new window:focus event in that case).
+    win.webContents.send("window:focus");
   }
 
   win.webContents.send("mode:changed", mode);
@@ -426,11 +438,11 @@ function createTray() {
   try {
     const icon = nativeImage.createFromPath(join(__dirname, "tray.png"));
     tray = new Tray(icon);
-    tray.setToolTip("Delamain");
+    tray.setToolTip("Baldborg");
     tray.on("click", toggleMode);
     updateTrayMenu();
   } catch (error) {
-    console.warn("[delamain] tray unavailable:", error.message);
+    console.warn("[baldborg] tray unavailable:", error.message);
     tray = null;
   }
 }
@@ -464,14 +476,14 @@ function updateTrayMenu() {
 
 /* --------------------------------------------------------------- hotkeys -- */
 /* globalShortcut only works under X11; kept as a bonus. Hyprland keybindings
-   (config/hypr/delamain.lua) are the primary path on Wayland. */
+   (config/hypr/baldborg.lua) are the primary path on Wayland. */
 
 function registerHotkeys() {
   try {
     globalShortcut.register("Super+Alt+D", toggleMode);
     globalShortcut.register("Super+Alt+M", () => setMuted(!state.muted));
   } catch (error) {
-    console.info("[delamain] globalShortcut unavailable (Wayland):", error.message);
+    console.info("[baldborg] globalShortcut unavailable (Wayland):", error.message);
   }
 }
 
@@ -501,6 +513,9 @@ function handleCommand(command) {
     case "glitch":
       win?.webContents.send("fx:glitch");
       break;
+    case "beat":
+      forceBeat();
+      break;
     case "show":
       win?.showInactive();
       break;
@@ -514,8 +529,8 @@ function handleCommand(command) {
       if (win) {
         win.webContents
           .capturePage()
-          .then((image) => writeFileSync("/tmp/opencode/delamain-capture.png", image.toPNG()))
-          .catch((error) => console.warn("[delamain] capture failed:", error.message));
+          .then((image) => writeFileSync("/tmp/opencode/baldborg-capture.png", image.toPNG()))
+          .catch((error) => console.warn("[baldborg] capture failed:", error.message));
       }
       break;
     default:
@@ -539,7 +554,7 @@ function startControlServer() {
     connection.on("error", () => {});
   });
 
-  server.on("error", (error) => console.warn("[delamain] control socket:", error.message));
+  server.on("error", (error) => console.warn("[baldborg] control socket:", error.message));
   server.listen(CONTROL_SOCKET);
 
   app.on("will-quit", () => {
@@ -565,6 +580,7 @@ function registerIpc() {
 
   ipcMain.handle("brain:chat", (_event, text) => {
     if (typeof text !== "string" || !text.trim()) return;
+    noteInteraction();
     startChat(text.trim(), (event) => win?.webContents.send("brain:event", event));
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
@@ -614,6 +630,7 @@ if (!gotLock) {
   });
 
   app.on("will-quit", () => {
+    stopBeats();
     stopVoice();
     restoreNoWarps();
     globalShortcut.unregisterAll();

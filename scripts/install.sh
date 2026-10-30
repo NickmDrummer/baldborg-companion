@@ -35,10 +35,10 @@ info "Installing the Hyprland integration"
 "$ROOT/scripts/install-hyprland.sh"
 
 info "Done"
-LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/delamain/app.log"
+LOG_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/baldborg/app.log"
 cat <<EOF
 
-Start it now:      $ROOT/bin/delamain-start
+Start it now:      $ROOT/bin/baldborg-start
 Or log out and back in: it is registered with o.launch_on_start.
 
 Bindings: Super+Shift+D toggle · M mute · R replay · H hide

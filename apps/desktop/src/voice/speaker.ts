@@ -57,7 +57,7 @@ export function createSpeaker(): Speaker {
     src.buffer = buffer;
     src.connect(analyser!);
     src.onended = () => {
-      console.info("[delamain] audio ended, peak level", peak.toFixed(2));
+      console.info("[baldborg] audio ended, peak level", peak.toFixed(2));
       if (source === src) {
         source = null;
         stop();
@@ -66,7 +66,7 @@ export function createSpeaker(): Speaker {
 
     source = src;
     src.start();
-    console.info("[delamain] audio playing", buffer.duration.toFixed(2), "s");
+    console.info("[baldborg] audio playing", buffer.duration.toFixed(2), "s");
 
     const data = new Uint8Array(analyser!.fftSize);
     let peak = 0;

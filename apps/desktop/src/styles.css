@@ -78,6 +78,21 @@ body,
   animation: fade 180ms ease-out both;
 }
 
+.beat {
+  width: 180px;
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 214, 255, 0.32);
+  background: rgba(3, 18, 26, 0.9);
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  color: #d8f6ff;
+  text-align: left;
+  animation: fade 220ms ease-out both;
+}
+
 .dot {
   width: 5px;
   height: 5px;

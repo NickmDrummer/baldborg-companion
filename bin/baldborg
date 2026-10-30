@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Control channel for the Delamain overlay.
+ * Control channel for the Baldborg overlay.
  *
  * Wayland does not allow an application to register global hotkeys reliably
  * (Electron's globalShortcut only works under X11/XWayland), so the compositor
  * owns the keybindings and calls this script instead:
  *
- *   bind = SUPER SHIFT, D, exec, /path/to/DelamainCompanion/bin/delamain toggle
- *   bind = SUPER SHIFT, M, exec, /path/to/DelamainCompanion/bin/delamain mute
+ *   bind = SUPER SHIFT, D, exec, /path/to/BaldborgCompanion/bin/baldborg toggle
+ *   bind = SUPER SHIFT, M, exec, /path/to/BaldborgCompanion/bin/baldborg mute
  *
  * Commands: toggle | open | close | mute | show | hide | quit
  */
@@ -16,13 +16,13 @@ import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const SOCKET = join(homedir(), ".config", "delamain", "control.sock");
+const SOCKET = join(homedir(), ".config", "baldborg", "control.sock");
 const command = process.argv[2];
 
-const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "show", "hide", "quit", "capture"]);
+const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "show", "hide", "quit", "capture"]);
 
 if (!command || !VALID.has(command)) {
-  console.error(`usage: delamain <${[...VALID].join("|")}>`);
+  console.error(`usage: baldborg <${[...VALID].join("|")}>`);
   process.exit(2);
 }
 
@@ -32,7 +32,7 @@ const socket = connect(SOCKET, () => {
 });
 
 socket.on("error", (error) => {
-  console.error(`delamain: cannot reach the overlay (${error.code}) at ${SOCKET}`);
+  console.error(`baldborg: cannot reach the overlay (${error.code}) at ${SOCKET}`);
   process.exit(1);
 });
 

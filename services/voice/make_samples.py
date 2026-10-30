@@ -17,7 +17,7 @@ CASES = [
         "en_bm_lewis.wav",
         "bm_lewis",
         "en-gb",
-        "Good evening. I am Delamain, your personal assistant. "
+        "Good evening. I am Baldborg, your personal assistant. "
         "I have detected a twelve percent increase in your fatigue levels. "
         "I strongly suggest you consider taking a break, before your judgment degrades further.",
     ),
@@ -25,7 +25,7 @@ CASES = [
         "es_em_alex.wav",
         "em_alex",
         "es",
-        "Buenas noches. Soy Delamain, su asistente personal. "
+        "Buenas noches. Soy Baldborg, su asistente personal. "
         "He detectado un incremento del doce por ciento en sus niveles de fatiga. "
         "Le sugiero encarecidamente que considere tomar un descanso, antes de que su juicio se deteriore aún más.",
     ),

@@ -1,8 +1,8 @@
 {
-  "name": "delamain-desktop",
+  "name": "baldborg-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Holographic Delamain companion overlay for the Linux desktop",
+  "description": "Holographic Baldborg companion overlay for the Linux desktop",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {

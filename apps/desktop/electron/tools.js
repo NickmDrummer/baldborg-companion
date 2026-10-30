@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
-const STATE_DIR = join(homedir(), ".config", "delamain");
+const STATE_DIR = join(homedir(), ".config", "baldborg");
 const REMINDERS_FILE = join(STATE_DIR, "reminders.json");
 const SPORTS_KEY = "123"; // TheSportsDB public test key
 
@@ -48,6 +48,17 @@ const WEATHER_CODES = {
   96: "tormenta con granizo",
   99: "tormenta con granizo intenso",
 };
+
+let weatherCache = null;
+let matchCache = null;
+
+export function lastWeather() {
+  return weatherCache;
+}
+
+export function lastMatch() {
+  return matchCache;
+}
 
 function config() {
   try {
@@ -193,6 +204,12 @@ async function weather(cityArg) {
   );
 
   const label = [place.name, place.country].filter(Boolean).join(", ");
+  weatherCache = {
+    place: label,
+    temperature: forecast.current.temperature_2m,
+    rainChance: forecast.daily.precipitation_probability_max?.[0] ?? 0,
+    at: Date.now(),
+  };
   return {
     place: label,
     summary: weatherSummary(label, forecast.current, forecast.daily),
@@ -256,7 +273,7 @@ function prepareReminder(args) {
       saveReminders(reminders);
 
       const seconds = Math.max(1, Math.round((when.getTime() - Date.now()) / 1000));
-      const unit = `delamain-reminder-${id}`;
+      const unit = `baldborg-reminder-${id}`;
       try {
         // systemd owns the timer, so the reminder fires even if the app closes.
         await run(
@@ -270,7 +287,7 @@ function prepareReminder(args) {
             "-u",
             "normal",
             "-a",
-            "Delamain",
+            "Baldborg",
             "Recordatorio",
             text,
           ],
@@ -279,7 +296,7 @@ function prepareReminder(args) {
       } catch (error) {
         console.warn("[tools] systemd-run failed, falling back to in-process timer:", error.message);
         setTimeout(() => {
-          run("notify-send", ["-u", "normal", "-a", "Delamain", "Recordatorio", text]).catch(() => {});
+          run("notify-send", ["-u", "normal", "-a", "Baldborg", "Recordatorio", text]).catch(() => {});
         }, seconds * 1000);
       }
 
@@ -315,6 +332,7 @@ async function teamFixtures(teamArg) {
     return {
       event: event.strEvent,
       league: event.strLeague,
+      whenIso: date ? date.toISOString() : null,
       when: date
         ? date.toLocaleString("es-MX", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
         : event.dateEvent,
@@ -324,6 +342,10 @@ async function teamFixtures(teamArg) {
 
   const upcoming = (next.events ?? []).slice(0, 3).map(format);
   const previous = (last.results ?? []).slice(0, 1).map(format);
+
+  if (upcoming[0]) {
+    matchCache = { event: upcoming[0].event, when: upcoming[0].whenIso, at: Date.now() };
+  }
 
   const parts = [];
   if (upcoming.length) parts.push(`Próximos partidos: ${upcoming.map((item) => `${item.event} (${item.when})`).join(" · ")}`);

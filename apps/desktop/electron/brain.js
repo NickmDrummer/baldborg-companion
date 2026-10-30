@@ -11,12 +11,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/delamain.mjs";
+import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
 import { prepareTool, TOOL_DEFINITIONS, toolsEnabled } from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
-const MEMORY_DIR = join(homedir(), ".config", "delamain");
+const MEMORY_DIR = join(homedir(), ".config", "baldborg");
 const MEMORY_FILE = join(MEMORY_DIR, "memory.json");
 
 const DEFAULTS = {
@@ -67,7 +67,7 @@ function saveHistory() {
     mkdirSync(MEMORY_DIR, { recursive: true });
     writeFileSync(MEMORY_FILE, JSON.stringify({ history }, null, 2));
   } catch (error) {
-    console.warn("[delamain] could not persist memory:", error.message);
+    console.warn("[baldborg] could not persist memory:", error.message);
   }
 }
 
@@ -109,9 +109,9 @@ export async function warmup() {
         options: { num_predict: 1, num_ctx: config.numCtx },
       }),
     });
-    console.info("[delamain] prompt cache warmed");
+    console.info("[baldborg] prompt cache warmed");
   } catch (error) {
-    console.warn("[delamain] warmup failed:", error.message);
+    console.warn("[baldborg] warmup failed:", error.message);
   }
 }
 
@@ -262,7 +262,7 @@ export async function startChat(text, sink, modelOverride) {
         }
 
         console.info(
-          `[delamain] tool ${name}: ${outcome.ok ? "ok" : outcome.error ?? "failed"}`,
+          `[baldborg] tool ${name}: ${outcome.ok ? "ok" : outcome.error ?? "failed"}`,
         );
         sink({ type: "tool", name, status: "done" });
         messages.push({ role: "tool", content: JSON.stringify(outcome) });
@@ -280,7 +280,7 @@ export async function startChat(text, sink, modelOverride) {
     saveHistory();
 
     console.info(
-      `[delamain] ${model}: first token ${(firstToken ?? started) - started} ms, ` +
+      `[baldborg] ${model}: first token ${(firstToken ?? started) - started} ms, ` +
         `total ${performance.now() - started} ms, ${parsed.text.length} chars`,
     );
     sink({ type: "done", mood: parsed.mood, text: parsed.text, model });
@@ -288,7 +288,7 @@ export async function startChat(text, sink, modelOverride) {
     if (error.name === "AbortError") {
       sink({ type: "done", mood: "neutral", text: "", cancelled: true });
     } else {
-      console.warn("[delamain] brain error:", error.message);
+      console.warn("[baldborg] brain error:", error.message);
       sink({
         type: "error",
         message: error.message,

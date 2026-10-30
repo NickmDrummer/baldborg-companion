@@ -3,13 +3,13 @@
  * Compare local models on persona-critical prompts.
  *
  * The point is not raw speed (see bench_ollama.mjs) but whether the model
- * can hold the Delamain voice: formal, dry, unsettling, two sentences max,
+ * can hold the Baldborg voice: formal, dry, unsettling, two sentences max,
  * with the mood tag protocol intact.
  *
  * Usage: node scripts/compare_persona.mjs [model ...]
  */
 
-import { parseMood, SYSTEM_PROMPT } from "../packages/persona/delamain.mjs";
+import { parseMood, SYSTEM_PROMPT } from "../packages/persona/baldborg.mjs";
 
 const HOST = process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434";
 const MODELS = process.argv.slice(2).length

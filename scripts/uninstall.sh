@@ -8,19 +8,19 @@ HYPR="$HOME/.config/hypr"
 info() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 info "Stopping the overlay"
-"$ROOT/bin/delamain" quit 2>/dev/null || true
+"$ROOT/bin/baldborg" quit 2>/dev/null || true
 
 info "Removing the Hyprland module"
-if [[ -f "$HYPR/hyprland.lua" ]] && grep -q 'require("hypr.delamain")' "$HYPR/hyprland.lua"; then
+if [[ -f "$HYPR/hyprland.lua" ]] && grep -q 'require("hypr.baldborg")' "$HYPR/hyprland.lua"; then
   cp "$HYPR/hyprland.lua" "$HYPR/hyprland.lua.bak.$(date +%s)"
-  sed -i '/require("hypr.delamain")/d' "$HYPR/hyprland.lua"
+  sed -i '/require("hypr.baldborg")/d' "$HYPR/hyprland.lua"
 fi
-rm -f "$HYPR/delamain.lua"
+rm -f "$HYPR/baldborg.lua"
 hyprctl reload >/dev/null 2>&1 || true
 
 if [[ "${1:-}" == "--purge" ]]; then
   info "Purging local data"
-  rm -rf "$HOME/.config/delamain" "${XDG_STATE_HOME:-$HOME/.local/state}/delamain"
+  rm -rf "$HOME/.config/baldborg" "${XDG_STATE_HOME:-$HOME/.local/state}/baldborg"
 fi
 
 info "Done"

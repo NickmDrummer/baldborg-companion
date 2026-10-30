@@ -28,7 +28,7 @@
     "window": {
       "passive": {
         "width": 200,
-        "height": 270
+        "height": 330
       },
       "interactive": {
         "width": 380,
@@ -55,5 +55,16 @@
     "team": {
       "name": "Rosario Central"
     }
+  },
+  "beats": {
+    "enabled": true,
+    "minMinutes": 20,
+    "maxMinutes": 45,
+    "silentHours": [
+      23,
+      8
+    ],
+    "dailyCap": 6,
+    "speak": false
   }
 }

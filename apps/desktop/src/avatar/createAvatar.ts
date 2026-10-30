@@ -46,9 +46,9 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     .then((head) => {
       rig.add(head.group);
       materials = head.materials;
-      console.info(`[delamain] head loaded: ${head.size.x.toFixed(2)}x${head.size.y.toFixed(2)}`);
+      console.info(`[baldborg] head loaded: ${head.size.x.toFixed(2)}x${head.size.y.toFixed(2)}`);
     })
-    .catch((error) => console.warn("[delamain] head load failed:", error.message));
+    .catch((error) => console.warn("[baldborg] head load failed:", error.message));
 
   // Render the scene into a texture so the glitch pass can distort it.
   const target = new THREE.WebGLRenderTarget(width, height, {

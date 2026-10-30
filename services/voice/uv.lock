@@ -61,7 +61,7 @@ wheels = [
 ]
 
 [[package]]
-name = "delamain-voice"
+name = "baldborg-voice"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

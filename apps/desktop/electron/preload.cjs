@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("delamain", {
+contextBridge.exposeInMainWorld("baldborg", {
   getState: () => ipcRenderer.invoke("app:get-state"),
   setMode: (mode) => ipcRenderer.invoke("app:set-mode", mode),
   quit: () => ipcRenderer.invoke("app:quit"),
@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld("delamain", {
     const listener = () => callback();
     ipcRenderer.on("window:focus", listener);
     return () => ipcRenderer.removeListener("window:focus", listener);
+  },
+  onBeat: (callback) => {
+    const listener = (_event, beat) => callback(beat);
+    ipcRenderer.on("beat:event", listener);
+    return () => ipcRenderer.removeListener("beat:event", listener);
   },
   onGlitch: (callback) => {
     const listener = () => callback();

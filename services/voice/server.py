@@ -1,4 +1,4 @@
-"""Local TTS sidecar for Delamain.
+"""Local TTS sidecar for Baldborg.
 
 Kokoro-82M via kokoro-onnx, served over HTTP so the Electron main process can
 request speech without paying the model load cost on every sentence.
@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 MODEL_PATH = HERE / "assets" / "models" / "kokoro-v1.0.onnx"
 VOICES_PATH = HERE / "assets" / "models" / "voices-v1.0.bin"
 
-app = FastAPI(title="Delamain voice")
+app = FastAPI(title="Baldborg voice")
 
 _kokoro: Kokoro | None = None
 

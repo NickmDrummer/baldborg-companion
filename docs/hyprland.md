@@ -9,8 +9,8 @@ is registered with `hl.window_rule` instead of the old `windowrulev2` syntax.
 ./scripts/install-hyprland.sh
 ```
 
-The script copies `config/hypr/delamain.lua` into `~/.config/hypr/`, appends
-`require("hypr.delamain")` to `hyprland.lua` (with a timestamped backup), and
+The script copies `config/hypr/baldborg.lua` into `~/.config/hypr/`, appends
+`require("hypr.baldborg")` to `hyprland.lua` (with a timestamped backup), and
 reloads Hyprland. It is idempotent.
 
 Bindings created by the file:
@@ -29,7 +29,7 @@ gone. `Super+Shift+H` was free.
 ## What the rules do
 
 ```lua
-o.window("^delamain-desktop$", {
+o.window("^baldborg-desktop$", {
   float = true,
   pin = true,
   no_initial_focus = true,
@@ -39,9 +39,9 @@ o.window("^delamain-desktop$", {
   border_size = 0,
 })
 
-o.window("^delamain-desktop$", {
-  size = { 200, 270 },
-  move = { "(monitor_w-200-24)", "(monitor_h-270-24)" },
+o.window("^baldborg-desktop$", {
+  size = { 200, 330 },
+  move = { "(monitor_w-200-24)", "(monitor_h-330-24)" },
 })
 ```
 
@@ -59,17 +59,18 @@ floating windows, and keeping it separate guarantees it is evaluated after
 parsed as literal strings and silently ignored.
 
 `size` is only the initial geometry (passive mode). The app resizes its own
-surface: 200x270 for the head alone, 380x460 when the chat opens.
+surface: 200x330 for the head and the proactive line, 380x460 when the
+chat opens.
 
 ## Keybindings and why they do not use Electron
 
 Wayland forbids application-level global hotkeys, so Electron's
 `globalShortcut` only works under X11/XWayland. The compositor owns the keys
-instead and calls `bin/delamain`, which speaks to the app over a UNIX socket at
-`~/.config/delamain/control.sock`.
+instead and calls `bin/baldborg`, which speaks to the app over a UNIX socket at
+`~/.config/baldborg/control.sock`.
 
 Available commands: `toggle`, `open`, `close`, `mute`, `forget`, `speak`,
-`show`, `hide`, `quit`, `capture` (writes `/tmp/opencode/delamain-capture.png`, useful for
+`show`, `hide`, `quit`, `capture` (writes `/tmp/opencode/baldborg-capture.png`, useful for
 debugging the renderer).
 
 ## Pointer warping
@@ -104,19 +105,19 @@ resizes/moves it, and gives focus back when it is in passive mode. With
 ## Verify
 
 ```sh
-hyprctl clients -j | jq -r '.[] | select(.class | test("delamain")) | "\(.class) at=\(.at) size=\(.size) pinned=\(.pinned)"'
+hyprctl clients -j | jq -r '.[] | select(.class | test("baldborg")) | "\(.class) at=\(.at) size=\(.size) pinned=\(.pinned)"'
 ```
 
 Expected:
 
 ```
-delamain-desktop at=[1606, 756] size=[200, 270] pinned=true
+baldborg-desktop at=[1606, 726] size=[200, 330] pinned=true
 ```
 
 with the chat open:
 
 ```
-delamain-desktop at=[1516, 596] size=[380, 460] pinned=true
+baldborg-desktop at=[1516, 596] size=[380, 460] pinned=true
 ```
 
 The head keeps its centre and top edge between both states; only the surface
@@ -150,12 +151,12 @@ was still under the pointer, it took focus again, and the cycle repeated.
 Pinned windows also keep a "home" workspace; focusing one from another
 workspace makes Hyprland jump there. When the chat opens on a different
 workspace, the app first adopts it with
-`hl.dsp.window.move({ workspace = "<id>", window = "class:delamain-desktop" })`.
+`hl.dsp.window.move({ workspace = "<id>", window = "class:baldborg-desktop" })`.
 
 ## Positioning
 
 Wayland clients cannot place their own windows, so the `move` rule in
-`config/hypr/delamain.lua` is the single source of truth for the initial
+`config/hypr/baldborg.lua` is the single source of truth for the initial
 position (monitor-local coordinates, 24 px margin from the bottom-right
 corner). Dragging works in interactive mode through the grip bar above the
 input (`-webkit-app-region: drag`).

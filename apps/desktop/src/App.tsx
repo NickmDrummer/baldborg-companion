@@ -28,6 +28,14 @@ interface BrainEvent {
   summary?: string;
 }
 
+interface BeatEvent {
+  type: "beat";
+  id: string;
+  text: string;
+  mood: Mood;
+  speak: boolean;
+}
+
 const TOOL_LABELS: Record<string, string> = {
   get_weather: "CLIMA",
   set_reminder: "RECORDATORIO",
@@ -36,7 +44,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_time: "HORA",
 };
 
-interface DelamainApi {
+interface BaldborgApi {
   getState: () => Promise<{
     mode: Mode;
     muted: boolean;
@@ -52,6 +60,7 @@ interface DelamainApi {
   onVoiceReplay: (callback: () => void) => () => void;
   onGlitch: (callback: () => void) => () => void;
   onWindowFocus: (callback: () => void) => () => void;
+  onBeat: (callback: (beat: BeatEvent) => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
@@ -61,11 +70,11 @@ interface DelamainApi {
 
 declare global {
   interface Window {
-    delamain?: DelamainApi;
+    baldborg?: BaldborgApi;
   }
 }
 
-const api = window.delamain;
+const api = window.baldborg;
 const TAG_RE = /^\s*\[\[mood:\s*([a-z]+)\s*\]\]\s*/i;
 
 /** Hide the machine-readable mood tag while the reply streams in. */
@@ -85,6 +94,8 @@ export default function App() {
   const [material, setMaterial] = useState<HeadMaterial>("normal");
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ id: string; summary: string } | null>(null);
+  const [beat, setBeat] = useState<{ text: string; mood: Mood } | null>(null);
+  const beatTimer = useRef<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -137,6 +148,7 @@ export default function App() {
 
     const offMode = api?.onModeChanged((next) => {
       setMode(next);
+      if (next === "interactive") setBeat(null);
       if (next === "passive") {
         setDraft("");
         speaker.current?.stop();
@@ -147,6 +159,14 @@ export default function App() {
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
     });
+    const offBeat = api?.onBeat((event) => {
+      setBeat({ text: event.text, mood: event.mood });
+      setMood(event.mood);
+      if (event.speak && !mutedRef.current) void speakText(event.text);
+      if (beatTimer.current) window.clearTimeout(beatTimer.current);
+      beatTimer.current = window.setTimeout(() => setBeat(null), 12_000);
+    });
+
     const offGlitch = api?.onGlitch(() => requestGlitch());
     const offReplay = api?.onVoiceReplay(() => {
       if (lastReply.current) void speakText(lastReply.current);
@@ -238,6 +258,7 @@ export default function App() {
       offMuted?.();
       offReplay?.();
       offGlitch?.();
+      offBeat?.();
       offWindowFocus?.();
       offBrain?.();
     };
@@ -269,11 +290,11 @@ export default function App() {
 
       if (event.key !== "Escape" || mode !== "interactive") return;
       if (busy) {
-        window.delamain?.cancelChat();
+        window.baldborg?.cancelChat();
         return;
       }
       setDraft("");
-      window.delamain?.setMode("passive");
+      window.baldborg?.setMode("passive");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -303,15 +324,19 @@ export default function App() {
       </div>
 
       {mode === "passive" ? (
-        <div className="statusline">
-          <span className="dot" />
-          DELAMAIN CORE · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
-        </div>
+        beat ? (
+          <div className="beat">{beat.text}</div>
+        ) : (
+          <div className="statusline">
+            <span className="dot" />
+            BALDBORG CORE · {muted ? "SILENCIADO" : busy ? "PROCESANDO" : "EN ESPERA"}
+          </div>
+        )
       ) : (
         <div className="console">
           <div className="grip">
             <span className="dot" />
-            <span className="grip-title">DELAMAIN CORE</span>
+            <span className="grip-title">BALDBORG CORE</span>
             <span className="grip-sep">·</span>
             <span className="grip-state">
               {muted

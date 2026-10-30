@@ -1,7 +1,7 @@
 [project]
-name = "delamain-voice"
+name = "baldborg-voice"
 version = "0.1.0"
-description = "Local TTS sidecar for Delamain Companion (Kokoro, optional Piper)"
+description = "Local TTS sidecar for Baldborg Companion (Kokoro, optional Piper)"
 requires-python = ">=3.12"
 dependencies = [
     "kokoro-onnx>=0.6.1",

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the Delamain overlay integration into this Omarchy/Hyprland system.
+# Install the Baldborg overlay integration into this Omarchy/Hyprland system.
 #
 # Idempotent: copies the window rules and keybindings, then makes sure the
 # main Hyprland config requires the file.
@@ -13,15 +13,22 @@ if [[ ! -f "$HYPR/hyprland.lua" ]]; then
   exit 1
 fi
 
-# The Lua module needs absolute paths; substitute the repo location.
-sed "s|__REPO__|$REPO|g" "$REPO/config/hypr/delamain.lua" > "$HYPR/delamain.lua"
+# Remove the module from the previous name, if any.
+if grep -q 'require("hypr.delamain")' "$HYPR/hyprland.lua" 2>/dev/null; then
+  sed -i '/require("hypr.delamain")/d' "$HYPR/hyprland.lua"
+  echo "removed legacy hypr.delamain requirement"
+fi
+rm -f "$HYPR/delamain.lua"
 
-if ! grep -q 'require("hypr.delamain")' "$HYPR/hyprland.lua"; then
+# The Lua module needs absolute paths; substitute the repo location.
+sed "s|__REPO__|$REPO|g" "$REPO/config/hypr/baldborg.lua" > "$HYPR/baldborg.lua"
+
+if ! grep -q 'require("hypr.baldborg")' "$HYPR/hyprland.lua"; then
   cp "$HYPR/hyprland.lua" "$HYPR/hyprland.lua.bak.$(date +%s)"
-  printf '\nrequire("hypr.delamain")\n' >> "$HYPR/hyprland.lua"
+  printf '\nrequire("hypr.baldborg")\n' >> "$HYPR/hyprland.lua"
   echo "added require to hyprland.lua"
 else
-  echo "hyprland.lua already requires hypr.delamain"
+  echo "hyprland.lua already requires hypr.baldborg"
 fi
 
 hyprctl reload >/dev/null

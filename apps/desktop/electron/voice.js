@@ -82,7 +82,7 @@ function spawnServer() {
     ? ["-m", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"]
     : ["run", "uvicorn", "server:app", "--host", "127.0.0.1", "--port", "8765"];
 
-  console.info(`[delamain] starting voice sidecar with ${binary}`);
+  console.info(`[baldborg] starting voice sidecar with ${binary}`);
 
   const proc = spawn(binary, args, {
     cwd: VOICE_DIR,
@@ -106,7 +106,7 @@ function spawnServer() {
     }
   });
   proc.on("error", (error) => {
-    console.warn(`[delamain] voice spawn failed (${uv}): ${error.message}`);
+    console.warn(`[baldborg] voice spawn failed (${uv}): ${error.message}`);
     if (uvIndex < UV_CANDIDATES.length - 1) {
       uvIndex += 1;
       child = null;
@@ -181,7 +181,7 @@ export async function synthesize(text) {
     return { wav: buffer, lang, voice: voice.voice };
   } catch (error) {
     lastError = error.message;
-    console.warn("[delamain] synthesize failed:", error.message);
+    console.warn("[baldborg] synthesize failed:", error.message);
     return null;
   }
 }
