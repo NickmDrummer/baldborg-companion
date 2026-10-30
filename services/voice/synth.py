@@ -3,7 +3,7 @@
 
 Usage:
     uv run synth.py "text" --voice bm_lewis --lang en-gb --out out.wav
-    uv run synth.py "texto" --voice em_santa --lang es --out salida.wav
+    uv run synth.py "texto" --voice em_alex --lang es --out salida.wav
 """
 
 from __future__ import annotations

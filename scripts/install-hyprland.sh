@@ -13,7 +13,8 @@ if [[ ! -f "$HYPR/hyprland.lua" ]]; then
   exit 1
 fi
 
-cp "$REPO/config/hypr/delamain.lua" "$HYPR/delamain.lua"
+# The Lua module needs absolute paths; substitute the repo location.
+sed "s|__REPO__|$REPO|g" "$REPO/config/hypr/delamain.lua" > "$HYPR/delamain.lua"
 
 if ! grep -q 'require("hypr.delamain")' "$HYPR/hyprland.lua"; then
   cp "$HYPR/hyprland.lua" "$HYPR/hyprland.lua.bak.$(date +%s)"

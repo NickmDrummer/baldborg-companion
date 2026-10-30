@@ -22,14 +22,6 @@ CASES = [
         "I strongly suggest you consider taking a break, before your judgment degrades further.",
     ),
     (
-        "es_em_santa.wav",
-        "em_santa",
-        "es",
-        "Buenas noches. Soy Delamain, su asistente personal. "
-        "He detectado un incremento del doce por ciento en sus niveles de fatiga. "
-        "Le sugiero encarecidamente que considere tomar un descanso, antes de que su juicio se deteriore aún más.",
-    ),
-    (
         "es_em_alex.wav",
         "em_alex",
         "es",
