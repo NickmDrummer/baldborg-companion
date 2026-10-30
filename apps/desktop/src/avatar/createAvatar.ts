@@ -219,22 +219,15 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     if (mouthLevel > 0.05) lastVoiceAt = time;
     const visorTarget = time - lastVoiceAt < 1.2 ? 0 : 1;
     visor += (visorTarget - visor) * Math.min(1, delta * 10);
-    if (headMaterial) {
-      headMaterial.uniforms.uVisor.value = visor;
-      headMaterial.uniforms.uTime.value = time;
-    }
+    if (headMaterial) headMaterial.uniforms.uTime.value = time;
     for (const material of eyeMaterials) {
       material.uniforms.uVisibility.value = 1 - visor;
     }
 
     // Local signal failure on the face while the jaw moves.
-    const glitchTarget =
-      mouthLevel > 0.05
-        ? Math.random() < 0.22
-          ? 0.55 + mouthLevel * 0.45
-          : mouthLevel * 0.18
-        : 0;
-    featureGlitch += (glitchTarget - featureGlitch) * Math.min(1, delta * 14);
+    // Tearing follows the voice: always present while speaking, gone in pauses.
+    const glitchTarget = mouthLevel > 0.03 ? Math.min(1, 0.25 + mouthLevel * 1.2) : 0;
+    featureGlitch += (glitchTarget - featureGlitch) * Math.min(1, delta * 16);
     for (const material of featureMaterials) {
       if (material.uniforms.uGlitch) material.uniforms.uGlitch.value = featureGlitch;
       if (material.uniforms.uTime) material.uniforms.uTime.value = time;

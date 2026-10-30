@@ -149,8 +149,8 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
 
   const socketMaterial = createSocketMaterial();
   const sockets = [
-    { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
-    { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
+    { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
+    { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
     { x: 0, y: -dims.y * 0.28, w: dims.x * 0.22, h: dims.y * 0.075 },
   ];
   for (const socket of sockets) {
@@ -194,7 +194,6 @@ function createNormalMaterial(): THREE.ShaderMaterial {
     side: THREE.FrontSide,
     uniforms: {
       uCutY: { value: -0.8 },
-      uVisor: { value: 1 },
       uTime: { value: 0 },
     },
     vertexShader: /* glsl */ `
@@ -215,37 +214,15 @@ function createNormalMaterial(): THREE.ShaderMaterial {
       varying float vLocalY;
       varying vec3 vLocal;
       uniform float uCutY;
-      uniform float uVisor;
-      uniform float uTime;
-
-      float hash(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-      }
 
       void main() {
         if (vLocalY < uCutY) discard;
 
         vec3 normalColor = normalize(vNormal) * 0.5 + 0.5;
 
-        // Visor band across both eyes: blocky glitch while idle.
-        float slice = floor(vLocal.y * 34.0);
-        float noise = hash(vec2(slice, floor(uTime * 6.0)));
-        float jitter = step(0.82, noise) * (noise - 0.5) * 0.03;
-        float x = vLocal.x + jitter;
-
-        float inX = smoothstep(0.36, 0.33, abs(x));
-        float inY = smoothstep(-0.06, -0.03, vLocal.y) * smoothstep(0.18, 0.15, vLocal.y);
-        float band = inX * inY * uVisor;
-
-        float flash = step(0.9, noise) * uVisor;
-        vec3 visorColor = mix(vec3(0.004, 0.008, 0.014), vec3(0.85, 0.06, 0.04), flash);
-
         // Dissolve the clipped neck instead of ending on a hard edge.
         float fade = smoothstep(uCutY, uCutY + 0.07, vLocalY);
-
-        vec3 color = mix(normalColor, visorColor, band);
-        float alpha = mix(fade, 1.0, band);
-        gl_FragColor = vec4(color, alpha);
+        gl_FragColor = vec4(normalColor, fade);
       }
     `,
   });
@@ -380,7 +357,8 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uGlitch: { value: 0 },
       uTime: { value: 0 },
       uVisibility: { value: 1 },
-      uColor: { value: new THREE.Color("#d6f4ff") },
+      uColor: { value: new THREE.Color("#ff2a1e") },
+      uIdle: { value: new THREE.Color("#d6f4ff") },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -392,6 +370,7 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       varying vec2 vUv;
       uniform vec3 uColor;
+      uniform vec3 uIdle;
       uniform float uOpen;
       uniform float uBlink;
       uniform float uGlitch;
@@ -410,13 +389,13 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       void main() {
         vec2 p = (vUv - 0.5) * vec2(1.0, 1.0);
 
-        // Local signal failure: horizontal slices slide and turn red.
-        float row = floor(vUv.y * 9.0);
-        float timeSlice = floor(uTime * 18.0);
-        float gate = step(0.55, hash(vec2(row, timeSlice)));
-        float slide = (hash(vec2(row, 7.0)) - 0.5) * 0.4 * gate * uGlitch;
-        p.x += slide;
-        p.y += (hash(vec2(timeSlice, 3.0)) - 0.5) * 0.12 * gate * uGlitch;
+        // Horizontal tearing: 7 slices slide sideways while speaking.
+        float row = floor(vUv.y * 7.0);
+        float timeSlice = floor(uTime * 22.0);
+        float rowHash = hash(vec2(row, timeSlice));
+        float gate = step(0.35, rowHash);
+        p.x += (hash(vec2(row, 11.0)) - 0.5) * 0.9 * gate * uGlitch;
+        p.y += (hash(vec2(timeSlice, 3.0)) - 0.5) * 0.18 * gate * uGlitch;
 
         // Almond shape: an ellipse that squashes when blinking or closing.
         float height = max(0.04, mix(0.3, 1.0, uOpen) * uBlink);
@@ -426,7 +405,13 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
         float core = smoothstep(0.05, -0.05, d);
         float halo = smoothstep(0.35, 0.0, d) * 0.18;
         float alpha = clamp(core + halo, 0.0, 1.0) * uVisibility;
-        vec3 color = mix(uColor, vec3(1.0, 0.12, 0.08), gate * uGlitch * 0.85);
+
+        // Red signal that tears into black slices while speaking.
+        float tearing = clamp(uGlitch * 1.6, 0.0, 1.0);
+        vec3 base = mix(uIdle, uColor, tearing);
+        vec3 hidden = vec3(0.02, 0.0, 0.0);
+        vec3 color = mix(base, hidden, gate * tearing);
+        color = mix(color, vec3(1.0, 0.22, 0.12), step(0.88, rowHash) * tearing * 0.9);
         gl_FragColor = vec4(color, alpha);
       }
     `,
