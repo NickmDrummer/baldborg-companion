@@ -70,7 +70,8 @@ instead and calls `bin/baldborg`, which speaks to the app over a UNIX socket at
 `~/.config/baldborg/control.sock`.
 
 Available commands: `toggle`, `open`, `close`, `mute`, `forget`, `speak`,
-`show`, `hide`, `quit`, `capture` (writes `/tmp/opencode/baldborg-capture.png`, useful for
+`beat`, `theme`, `announce "<text>"`, `glitch`, `show`, `hide`, `quit`,
+`capture` (writes `/tmp/opencode/baldborg-capture.png`, useful for
 debugging the renderer).
 
 ## Pointer warping

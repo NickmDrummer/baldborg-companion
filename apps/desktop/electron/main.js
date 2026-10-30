@@ -521,7 +521,10 @@ function registerHotkeys() {
 
 /* --------------------------------------------------------- control socket -- */
 
-function handleCommand(command) {
+function handleCommand(raw) {
+  const [command, ...rest] = raw.trim().split(/\s+/);
+  const argument = rest.join(" ").trim();
+
   switch (command) {
     case "toggle":
       toggleMode();
@@ -547,6 +550,17 @@ function handleCommand(command) {
       break;
     case "beat":
       forceBeat();
+      break;
+    case "announce":
+      if (argument) {
+        win?.webContents.send("beat:event", {
+          type: "beat",
+          id: "announce",
+          text: argument,
+          mood: "neutral",
+          speak: false,
+        });
+      }
       break;
     case "theme": {
       const accent = currentThemeAccent();

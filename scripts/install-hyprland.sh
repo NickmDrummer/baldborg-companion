@@ -31,13 +31,18 @@ else
   echo "hyprland.lua already requires hypr.baldborg"
 fi
 
-# Theme hook: adopt the accent colour when Omarchy changes theme.
-HOOK_DIR="$HOME/.config/omarchy/hooks/theme-set.d"
+# Omarchy hooks: theme accent and a line after updates.
 if [[ -d "$HOME/.config/omarchy" ]]; then
-  mkdir -p "$HOOK_DIR"
-  sed "s|__REPO__|$REPO|g" "$REPO/config/omarchy/theme-set.sh" > "$HOOK_DIR/baldborg-theme.sh"
-  chmod +x "$HOOK_DIR/baldborg-theme.sh"
-  echo "installed theme-set hook"
+  install_hook() {
+    local event="$1" source="$2" name="$3"
+    local dir="$HOME/.config/omarchy/hooks/${event}.d"
+    mkdir -p "$dir"
+    sed "s|__REPO__|$REPO|g" "$source" > "$dir/$name"
+    chmod +x "$dir/$name"
+    echo "installed ${event} hook"
+  }
+  install_hook theme-set "$REPO/config/omarchy/theme-set.sh" baldborg-theme.sh
+  install_hook post-update "$REPO/config/omarchy/post-update.sh" baldborg-update.sh
 fi
 
 hyprctl reload >/dev/null

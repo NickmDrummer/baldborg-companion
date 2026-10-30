@@ -132,21 +132,37 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
     const material = eyeMaterial.clone();
     material.uniforms.uOpen.value = 1;
     const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
-    eye.scale.set(dims.x * 0.17, dims.y * 0.026, 1);
+    eye.scale.set(dims.x * 0.19, dims.y * 0.03, 1);
     const eyeX = side * dims.x * 0.17;
-    const eyeY = dims.y * 0.075;
+    const eyeY = dims.y * 0.02;
     eye.position.set(eyeX, eyeY, FORWARD * surfaceZ(eyeX, eyeY, dims.z * 0.34));
     eye.rotation.z = side * -0.07;
+    eye.renderOrder = 2;
     group.add(eye);
     return eye;
   });
   eyeMaterial.dispose();
 
+  const socketMaterial = createSocketMaterial();
+  const sockets = [
+    { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
+    { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.27, h: dims.y * 0.085 },
+    { x: 0, y: -dims.y * 0.31, w: dims.x * 0.21, h: dims.y * 0.07 },
+  ];
+  for (const socket of sockets) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), socketMaterial);
+    mesh.scale.set(socket.w, socket.h, 1);
+    mesh.position.set(socket.x, socket.y, FORWARD * (surfaceZ(socket.x, socket.y, dims.z * 0.34) - 0.002));
+    mesh.renderOrder = 1;
+    group.add(mesh);
+  }
+
   const mouthMaterial = createFeatureMaterial();
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
   mouth.scale.set(dims.x * 0.13, dims.y * 0.05, 1);
-  mouth.position.set(0, -dims.y * 0.275, FORWARD * surfaceZ(0, -dims.y * 0.275, dims.z * 0.34));
+  mouth.position.set(0, -dims.y * 0.31, FORWARD * surfaceZ(0, -dims.y * 0.31, dims.z * 0.34));
+  mouth.renderOrder = 2;
   group.add(mouth);
 
   return {
@@ -287,6 +303,34 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
   });
 }
 
+/** Soft dark ellipse that gives the eyes and mouth a socket to sit in. */
+function createSocketMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    uniforms: {
+      uOpacity: { value: 0.82 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      uniform float uOpacity;
+      void main() {
+        float d = length((vUv - 0.5) * 2.0);
+        float alpha = smoothstep(1.0, 0.45, d) * uOpacity;
+        gl_FragColor = vec4(vec3(0.0, 0.015, 0.03), alpha);
+      }
+    `,
+  });
+}
+
 /** Emissive eyes and mouth: a bright core with soft edges. */
 function createFeatureMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -336,11 +380,13 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
         p.x += slide;
         p.y += (hash(vec2(timeSlice, 3.0)) - 0.5) * 0.12 * gate * uGlitch;
 
-        float height = mix(0.18, 1.0, uOpen) * uBlink;
-        float d = sdRound(p, vec2(0.42, 0.5 * height), 0.28);
-        // Fill the shape (d < 0 inside), with a soft edge and a faint halo.
-        float core = smoothstep(0.03, -0.03, d);
-        float halo = smoothstep(0.18, 0.0, d) * 0.12;
+        // Almond shape: an ellipse that squashes when blinking or closing.
+        float height = max(0.04, mix(0.3, 1.0, uOpen) * uBlink);
+        vec2 q = p * 2.0;
+        q.y /= height;
+        float d = length(q) - 1.0;
+        float core = smoothstep(0.05, -0.05, d);
+        float halo = smoothstep(0.35, 0.0, d) * 0.18;
         float alpha = clamp(core + halo, 0.0, 1.0);
         vec3 color = mix(uColor, vec3(1.0, 0.12, 0.08), gate * uGlitch * 0.85);
         gl_FragColor = vec4(color, alpha);
