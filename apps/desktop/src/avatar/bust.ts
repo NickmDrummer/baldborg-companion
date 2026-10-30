@@ -94,10 +94,14 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   geometry.computeVertexNormals();
 
   const dims = size.clone().multiplyScalar(scale);
+  // Cut plane in the final (centred, scaled) local space; the shader discards
+  // the triangles that poke below it so the neck edge is a clean line.
+  const cutLocal = (cutY - centre.y) * scale;
 
   const group = new THREE.Group();
   const headMaterial =
     material === "normal" ? createNormalMaterial() : createHologramMaterial(1.0);
+  headMaterial.uniforms.uCutY.value = cutLocal;
 
   // Regions where the scan's own eyes and lips are flattened out so our
   // emissive features are the only facial detail (hologram variant only).
@@ -153,25 +157,30 @@ function createNormalMaterial(): THREE.ShaderMaterial {
     transparent: true,
     depthWrite: true,
     side: THREE.FrontSide,
+    uniforms: {
+      uCutY: { value: -0.8 },
+    },
     vertexShader: /* glsl */ `
       varying vec3 vNormal;
-      varying float vWorldY;
+      varying float vLocalY;
+      uniform float uCutY;
 
       void main() {
         vNormal = normalize(normalMatrix * normal);
         vec4 world = modelMatrix * vec4(position, 1.0);
-        vWorldY = world.y;
+        vLocalY = position.y;
         gl_Position = projectionMatrix * viewMatrix * world;
       }
     `,
     fragmentShader: /* glsl */ `
       varying vec3 vNormal;
-      varying float vWorldY;
+      varying float vLocalY;
+      uniform float uCutY;
 
       void main() {
         vec3 normalColor = normalize(vNormal) * 0.5 + 0.5;
         // Dissolve the clipped neck instead of ending on a hard edge.
-        float fade = smoothstep(-0.86, -0.70, vWorldY);
+        float fade = smoothstep(uCutY, uCutY + 0.07, vLocalY);
         gl_FragColor = vec4(normalColor, fade);
       }
     `,
@@ -189,6 +198,7 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
       uTime: { value: 0 },
       uColor: { value: new THREE.Color("#7fd6ff") },
       uIntensity: { value: intensity },
+      uCutY: { value: -0.8 },
       uEye: { value: new THREE.Vector2(0.2, 0.12) },
       uEyeR: { value: new THREE.Vector2(0.14, 0.08) },
       uMouth: { value: new THREE.Vector2(0, -0.4) },
@@ -215,6 +225,7 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
       uniform vec3 uColor;
       uniform float uIntensity;
       uniform float uTime;
+      uniform float uCutY;
       uniform vec2 uEye;
       uniform vec2 uEyeR;
       uniform vec2 uMouth;
@@ -255,7 +266,8 @@ function createHologramMaterial(intensity: number): THREE.ShaderMaterial {
         vec3 color = uColor * (glow * (0.6 + 0.4 * band) + speckle) + uColor * seam * 0.55;
         float alpha = clamp((0.2 + 0.75 * rim) * uIntensity + seam * 0.2, 0.0, 1.0);
         alpha *= 1.0 - 0.45 * flat_;
-        alpha *= smoothstep(-0.80, -0.66, vLocal.y);
+        if (vLocal.y < uCutY) discard;
+        alpha *= smoothstep(uCutY, uCutY + 0.07, vLocal.y);
 
         gl_FragColor = vec4(uColor, alpha);
       }
