@@ -306,7 +306,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
       low.buffer = buffer;
       low.playbackRate.value = settings.pitch;
       const lowGain = ctx.createGain();
-      lowGain.gain.value = 0.45;
+      lowGain.gain.value = 0.3;
       low.connect(lowGain);
       lowGain.connect(input!);
       low.start();
