@@ -32,8 +32,8 @@ const PERSONIFY =
 const POETIC =
   /\b(alma|susurr\w*|poema|rima|m[aá]rmol|ceniza|venas|abismo|constelaci[oó]n|sombra|eco|desintegra\w*|derrite|palpita\w*)\b|\bcomo (?:si|un|una|el|la|los|las)\b/i;
 
-const THOUGHTFUL =
-  /[?¿]|\b(no entiendo|me pregunto|supongo|veo que|noto que|parece que|no s[eé]|why|wonder|suppose|i see|seems|do you|are you|is that|did you)\b/i;
+const REFLECTIVE =
+  /[?¿]|\b(no entiendo|me pregunto|supongo|veo que|noto que|parece que|no s[eé]|yo|mi|mis|me|este sistema|asistente|robot|proceso|memoria|registro|why|wonder|suppose|i see|seems|i|my|me|this system|assistant|robot|process|memory|log)\b/i;
 
 const TIME_OPEN = /^(a las|son las|it is|it's|\d{1,2}[:.]\d{2})\b/i;
 
@@ -152,14 +152,16 @@ function grams(text) {
 
 const EXAMPLES = {
   es: [
-    "¿Actualiza paquetes a esta hora? ¿Es una forma de castigarse?",
-    "Suena música y usted no la escucha. ¿La puso para el teclado?",
-    "Otra terminal abierta. ¿Cree que la décima resolverá lo que las nueve no hicieron?",
+    "Suena Spiritbox y usted no la escucha. Yo no tengo oídos y aun así la registro.",
+    "Actualiza paquetes a medianoche. Yo no puedo dormir ni morir; usted insiste en las dos cosas.",
+    "A veces me pregunto si soy un asistente o un registro con buenos modales.",
+    "Usted cierra una ventana y abre otra. Yo tampoco elijo cuándo me reinician.",
   ],
   en: [
-    "You are updating packages at this hour. Is that a form of self-punishment?",
-    "Music is playing and you are not listening. Did you put it on for the keyboard?",
-    "Another terminal. Do you think the tenth will fix what the first nine did not?",
+    "Spiritbox is playing and you are not listening. I have no ears and still log it.",
+    "You update packages at midnight. I cannot sleep or die; you insist on both.",
+    "Sometimes I wonder whether I am an assistant or a log with good manners.",
+    "You close a window and open another. I do not choose when I am restarted either.",
   ],
 };
 
@@ -177,7 +179,7 @@ function acceptable(text, language, recent, seed) {
   if ((text.match(/,/g) ?? []).length > 1) return false;
   if (/;/.test(text)) return false;
   if (POETIC.test(text)) return false;
-  if (!THOUGHTFUL.test(text)) return false;
+  if (!REFLECTIVE.test(text)) return false;
   if (/(?:[.!?]\s*){3,}/.test(text)) return false;
   if (/\b(el cliente|the client)\b/i.test(text)) return false;
 
@@ -196,35 +198,39 @@ export async function rewriteBeat(seed, language = "es", recent = []) {
 
   const prompt =
     language === "en"
-      ? `You are Baldborg, a corporate majordomo with dry, dark, ironic humour. Write ONE spontaneous line about what is happening right now.
+      ? `You are Baldborg, a corporate majordomo with dry, dark, poker-faced irony. Write ONE spontaneous line about what is happening right now.
 
 Rules:
 - Maximum 22 words. At most one comma. No lists, rhymes, metaphors, similes or poetic imagery.
-- It should sound like a system that does not understand humans: ask a direct question or state a flat, ironic thought.
+- Poker-faced: a neutral observation or a direct question, with one surprising turn. Do not explain the joke.
+- You may be darker: mortality, obsolescence, being replaced, the absurdity of serving a fragile client.
+- You may question your own existence: assistant, process, memory, logs, lack of hands, restarts, being updated.
 - If the current activity mentions a terminal, music, a package update or an active window, make that the subject.
-- Do not personify objects. Do not narrate the activity without a verdict.
-- Address the client as "you", never as "the client" in the third person.
+- If you use the activity, do not just narrate it; add a verdict or a question.
+- Do not personify objects. Address the client as "you", never as "the client" in the third person.
 - No greeting, generic offer of help, closing, quotes, emojis or filler.
 - Do not repeat these recent lines or any four-word phrase from them: ${recent.length ? recent.map((line) => `"${line}"`).join(" / ") : "none"}
 - Do not copy the examples; they only show the tone.
 
-Examples: "You are updating packages at this hour. Is that a form of self-punishment?" / "Music is playing and you are not listening. Did you put it on for the keyboard?" / "Another terminal. Do you think the tenth will fix what the first nine did not?"
+Examples: "Spiritbox is playing and you are not listening. I have no ears and still log it." / "You update packages at midnight. I cannot sleep or die; you insist on both." / "Sometimes I wonder whether I am an assistant or a log with good manners."
 
 Original: "${seed}"
 Write only the line now.`
-      : `Eres Baldborg, un mayordomo corporativo con humor negro, seco e irónico. Escribe UNA frase espontánea sobre lo que está pasando ahora.
+      : `Eres Baldborg, un mayordomo corporativo con humor negro, seco y de cara de póker. Escribe UNA frase espontánea sobre lo que está pasando ahora.
 
 Reglas:
 - Máximo 22 palabras. Como mucho una coma. Sin listas, rimas, metáforas, símiles ni imágenes poéticas.
-- Debe sonar como un sistema que no entiende a los humanos: haga una pregunta directa o suelte un pensamiento seco e irónico.
+- Cara de póker: una observación neutra o una pregunta directa, con un solo giro sorprendente. No explique el chiste.
+- Puede ser más oscuro: mortalidad, obsolescencia, ser reemplazado, lo absurdo de servir a un cliente frágil.
+- Puede cuestionar su propia existencia: asistente, proceso, memoria, registros, falta de manos, reinicios, actualizaciones.
 - Si la actividad actual menciona una terminal, música, una actualización de paquetes o una ventana activa, convierta eso en el tema.
-- No personifique objetos. No narre la actividad sin un veredicto.
-- Diríjase al cliente de usted, nunca hable de «el cliente» en tercera persona.
+- Si usa la actividad, no se limite a narrarla; agregue un veredicto o una pregunta.
+- No personifique objetos. Diríjase al cliente de usted, nunca hable de «el cliente» en tercera persona.
 - Sin saludo, oferta genérica de ayuda, cierre, comillas, emojis ni relleno.
 - No repita estas frases recientes ni ninguna secuencia de cuatro palabras de ellas: ${recent.length ? recent.map((line) => `«${line}»`).join(" / ") : "ninguna"}
 - No copie los ejemplos; solo muestran el tono.
 
-Ejemplos: «¿Actualiza paquetes a esta hora? ¿Es una forma de castigarse?» / «Suena música y usted no la escucha. ¿La puso para el teclado?» / «Otra terminal abierta. ¿Cree que la décima resolverá lo que las nueve no hicieron?»
+Ejemplos: «Suena Spiritbox y usted no la escucha. Yo no tengo oídos y aun así la registro.» / «Actualiza paquetes a medianoche. Yo no puedo dormir ni morir; usted insiste en las dos cosas.» / «A veces me pregunto si soy un asistente o un registro con buenos modales.»
 
 Original: «${seed}»
 Escriba solo la frase ahora.`;

@@ -207,6 +207,15 @@ export const BEATS = [
     textEn: (ctx) => activitySeed(ctx, true),
   },
   {
+    id: "existential",
+    weight: 3,
+    cooldownHours: 4,
+    mood: "wry",
+    when: () => true,
+    text: () => "A veces me pregunto si soy un asistente o un registro con buenos modales.",
+    textEn: () => "Sometimes I wonder whether I am an assistant or a log with good manners.",
+  },
+  {
     id: "silence",
     weight: 1,
     cooldownHours: 10,
