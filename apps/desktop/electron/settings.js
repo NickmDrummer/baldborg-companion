@@ -16,6 +16,7 @@ const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 export const BEAT_LANGUAGES = new Set(["es", "en", "auto"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
 export const VOICE_PROVIDERS = new Set(["kokoro", "azure"]);
+export const VOICE_EFFECTS = new Set(["clean", "device", "radio", "hologram"]);
 
 export function readConfig() {
   return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
@@ -51,6 +52,15 @@ export function setVoiceProvider(value) {
   updateConfig((raw) => {
     raw.voice = raw.voice ?? {};
     raw.voice.provider = value;
+  });
+  return value;
+}
+
+export function setVoiceEffectsPreset(value) {
+  if (!VOICE_EFFECTS.has(value)) throw new Error("invalid voice effect preset");
+  updateConfig((raw) => {
+    raw.voice = raw.voice ?? {};
+    raw.voice.effects = { ...(raw.voice.effects ?? {}), preset: value };
   });
   return value;
 }
@@ -107,6 +117,7 @@ export function configSummary() {
     temperature: raw.brain?.temperature ?? 0,
     autoSpeak: raw.voice?.autoSpeak !== false,
     voiceProvider: raw.voice?.provider ?? "kokoro",
+    voiceEffects: raw.voice?.effects?.preset ?? "device",
     sttModel: raw.voice?.stt?.model ?? "?",
     beatsEnabled: raw.beats?.enabled !== false,
     beatsLanguage: raw.beats?.language ?? "es",

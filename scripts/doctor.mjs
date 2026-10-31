@@ -212,6 +212,7 @@ async function main() {
   /* --------------------------------------------------------------- voice -- */
   const provider = config?.voice?.provider ?? "kokoro";
   ok("Proveedor de voz", provider);
+  ok("Efecto de voz", config?.voice?.effects?.preset ?? "device");
 
   let azureFile = null;
   if (existsSync(VOICE_FILE)) {

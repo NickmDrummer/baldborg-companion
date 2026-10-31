@@ -52,6 +52,7 @@ import {
   setBeatsEvery,
   setBeatsLanguage,
   setSilentHours,
+  setVoiceEffectsPreset,
   setVoiceProvider,
 } from "./settings.js";
 import {
@@ -622,7 +623,7 @@ function configMessage() {
         : `${b.silentHours[0]}-${b.silentHours[1]}`;
     return [
       `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
-      `Voz: ${c.voiceProvider} · automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
+      `Voz: ${c.voiceProvider} · FX ${c.voiceEffects} · automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
       `Beats: ${b.enabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
         `${c.beatsGenerator} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}`,
       `Avatar: ${c.material}`,
@@ -687,6 +688,7 @@ function runAppCommand(raw) {
           "/mute [on|off] — silenciar o activar la voz\n" +
           "/voice [on|off] — voz automática persistente\n" +
           "/voice provider kokoro|azure — proveedor de voz\n" +
+          "/voice fx clean|device|radio|hologram — efecto de audio\n" +
           "/beats [on|off] — activar o detener los beats\n" +
           "/beats every <min>|random — frecuencia fija o aleatoria\n" +
           "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
@@ -720,6 +722,17 @@ function runAppCommand(raw) {
 
     case "/voice": {
       const value = argument.toLowerCase();
+      const fxMatch = value.match(/^(?:fx|effects?)\s+(clean|device|radio|hologram)$/);
+      if (fxMatch) {
+        try {
+          const preset = setVoiceEffectsPreset(fxMatch[1]);
+          win?.webContents.send("voice:effects", preset);
+          return { ok: true, message: `Efecto de voz: ${preset}.` };
+        } catch (error) {
+          return { ok: false, message: `No pude cambiar el efecto: ${error.message}` };
+        }
+      }
+
       const providerMatch = value.match(/^(?:provider\s+)?(kokoro|azure)$/);
       if (providerMatch) {
         try {
@@ -1075,6 +1088,13 @@ function registerIpc() {
     mode,
     muted: state.muted,
     autoSpeak: autoSpeakEnabled(),
+    effects: (() => {
+      try {
+        return configSummary().voiceEffects;
+      } catch {
+        return "device";
+      }
+    })(),
     material: avatarMaterial(),
     accent: state.accent ?? currentThemeAccent(),
   }));

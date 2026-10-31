@@ -38,6 +38,9 @@
         "voice": "en-US-AndrewMultilingualNeural",
         "lang": "en-US"
       }
+    },
+    "effects": {
+      "preset": "device"
     }
   },
   "avatar": {

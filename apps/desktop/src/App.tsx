@@ -3,7 +3,7 @@ import Avatar from "./avatar/Avatar";
 import type { HeadMaterial } from "./avatar/bust";
 import type { Mood } from "./avatar/createAvatar";
 import { requestGlitch } from "./avatar/effects";
-import { createSpeaker } from "./voice/speaker";
+import { createSpeaker, type EffectsPreset } from "./voice/speaker";
 
 type Mode = "passive" | "interactive";
 type Role = "user" | "assistant" | "error";
@@ -66,6 +66,7 @@ interface BaldborgApi {
     mode: Mode;
     muted: boolean;
     autoSpeak?: boolean;
+    effects?: EffectsPreset;
     material?: HeadMaterial;
     accent?: string;
   }>;
@@ -90,6 +91,7 @@ interface BaldborgApi {
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
   onAutoSpeak: (callback: (value: boolean) => void) => () => void;
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
+  onEffects: (callback: (value: EffectsPreset) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
@@ -171,6 +173,7 @@ export default function App() {
       setMode(state.mode);
       setMuted(state.muted);
       autoSpeakRef.current = state.autoSpeak ?? true;
+      if (state.effects) speaker.current?.setEffects(state.effects);
       if (state.material) setMaterial(state.material);
       if (state.accent) applyAccent(state.accent);
     });
@@ -198,6 +201,7 @@ export default function App() {
       autoSpeakRef.current = value;
     });
     const offMaterial = api?.onMaterial((value) => setMaterial(value));
+    const offEffects = api?.onEffects((value) => speaker.current?.setEffects(value));
 
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
@@ -337,6 +341,7 @@ export default function App() {
       offMuted?.();
       offAutoSpeak?.();
       offMaterial?.();
+      offEffects?.();
       offReplay?.();
       offGlitch?.();
       offBeat?.();
