@@ -19,7 +19,11 @@ import {
 } from "../apps/desktop/electron/commands.js";
 import { nextIntervalMinutes } from "../apps/desktop/electron/beats.js";
 import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
-import { normaliseKey, parseFact } from "../apps/desktop/electron/memory.js";
+import {
+  normaliseKey,
+  parseFact,
+  parseMemoryIntent,
+} from "../apps/desktop/electron/memory.js";
 
 const ARGENTINA = "America/Argentina/Buenos_Aires";
 
@@ -157,4 +161,23 @@ test("remember rejects missing separators and credentials", () => {
 test("remember collapses whitespace in values", () => {
   const fact = parseFact("nota = primera línea\nsegunda línea");
   assert.equal(fact.value, "primera línea segunda línea");
+});
+
+test("natural memory understands save, forget and list", () => {
+  assert.deepEqual(parseMemoryIntent("recuerda que mi color favorito es el azul"), {
+    action: "save",
+    key: "color_favorito",
+    value: "azul",
+  });
+  assert.deepEqual(parseMemoryIntent("remember that my favorite color is blue"), {
+    action: "save",
+    key: "favorite_color",
+    value: "blue",
+  });
+  assert.deepEqual(parseMemoryIntent("olvida mi color favorito"), {
+    action: "forget",
+    key: "color_favorito",
+  });
+  assert.deepEqual(parseMemoryIntent("¿Qué recuerdas de mí?"), { action: "list" });
+  assert.equal(parseMemoryIntent("hola, ¿cómo estás?"), null);
 });

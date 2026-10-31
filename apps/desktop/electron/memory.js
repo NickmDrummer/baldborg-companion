@@ -79,6 +79,83 @@ export function parseFact(raw) {
   return { key, value };
 }
 
+function stripSubject(raw) {
+  return String(raw ?? "")
+    .replace(/^(?:mi|mis|el|la|los|las|un|una|my|our)\s+/i, "")
+    .trim();
+}
+
+function stripValue(raw) {
+  return String(raw ?? "")
+    .replace(/^(?:el|la|los|las|un|una|the)\s+/i, "")
+    .trim();
+}
+
+/** Turn "mi color favorito es el azul" into key/value, or a note key. */
+export function parseNaturalFact(raw) {
+  const body = String(raw ?? "")
+    .replace(/[.!?]+$/, "")
+    .trim();
+  if (!body) return null;
+
+  const split =
+    body.match(/^(.{1,60}?)\s*(?:=|:)\s*(.{1,300})$/s) ??
+    body.match(/^(.{1,60}?)\s+(?:es|son|se llama|se llaman|is called|are called|is|are)\s+(.{1,300})$/i);
+
+  if (split) {
+    const key = normaliseKey(stripSubject(split[1]));
+    const value = stripValue(split[2]).replace(/\s+/g, " ").slice(0, 300);
+    if (key && value) return { key, value };
+  }
+
+  const note = normaliseKey(body).split("_").filter(Boolean).slice(0, 6).join("_");
+  return {
+    key: `nota_${note || "general"}`.slice(0, 40),
+    value: body.replace(/\s+/g, " ").slice(0, 300),
+  };
+}
+
+/**
+ * Parse natural-language memory intents:
+ *   "recuerda que mi color favorito es el azul"
+ *   "olvida mi color favorito"
+ *   "¿qué recuerdas de mí?"
+ * Returns null when the message is not a memory command.
+ */
+export function parseMemoryIntent(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+
+  const list =
+    /^(?:¿)?(?:qué recuerdas(?: de mí)?|qué sabes(?: de mí)?|muéstrame (?:tu )?memoria|lista (?:tu )?memoria|what do you remember(?: about me)?|what do you know about me|show (?:me )?your memory|list (?:your )?memory)[?.!]*$/i;
+  if (list.test(text)) return { action: "list" };
+
+  const forget =
+    text.match(/^(?:olvida|olvídate de|borra de tu memoria|forget)(?:\s+que|\s+that|:)?\s+(.+)$/i);
+  if (forget) {
+    const fact = parseNaturalFact(forget[1]);
+    if (!fact) return null;
+    const direct = normaliseKey(stripSubject(forget[1]));
+    const facts = listFacts();
+    if (facts.some((entry) => entry.key === direct)) return { action: "forget", key: direct };
+    if (facts.some((entry) => entry.key === fact.key)) return { action: "forget", key: fact.key };
+    if (!fact.key.startsWith("nota_")) return { action: "forget", key: fact.key };
+    const byValue = facts.find((entry) =>
+      normaliseText(entry.value).includes(normaliseText(forget[1])),
+    );
+    return { action: "forget", key: byValue?.key ?? direct };
+  }
+
+  const save =
+    text.match(/^(?:recuerda|ten en cuenta|ten presente|no olvides|guarda|apunta|remember|keep in mind|note)(?:\s+que|\s+that|:)?\s+(.+)$/i);
+  if (save) {
+    const fact = parseNaturalFact(save[1]);
+    return fact ? { action: "save", ...fact } : null;
+  }
+
+  return null;
+}
+
 export function rememberFact(key, value) {
   const facts = loadFacts();
   const now = new Date().toISOString();

@@ -20,7 +20,13 @@ import {
   toolDefinitions,
   toolsEnabled,
 } from "./tools.js";
-import { memoryBlock } from "./memory.js";
+import {
+  forgetFact,
+  listFacts,
+  memoryBlock,
+  parseMemoryIntent,
+  rememberFact,
+} from "./memory.js";
 import { detectLanguage } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -330,6 +336,82 @@ function namesAnotherTeam(text) {
   return !mentionsConfiguredTeam(match[1]);
 }
 
+async function runMemoryRoute(route, sink, userText) {
+  const english = detectLanguage(userText) === "en";
+  let text;
+
+  if (route.action === "list") {
+    const facts = listFacts();
+    if (!facts.length) {
+      text = english
+        ? "[[mood:neutral]] My long-term memory is empty, sir."
+        : "[[mood:neutral]] Mi memoria de largo plazo está vacía, señor.";
+    } else {
+      const shown = facts.slice(0, 8).map((fact) => `${fact.key} = ${fact.value}`).join("; ");
+      const more = facts.length > 8 ? (english ? "; more…" : "; y más…") : "";
+      text = english
+        ? `[[mood:wry]] I remember ${facts.length} fact${facts.length === 1 ? "" : "s"}: ${shown}${more}.`
+        : `[[mood:wry]] Recuerdo ${facts.length} hecho${facts.length === 1 ? "" : "s"}: ${shown}${more}.`;
+    }
+  } else if (route.action === "save") {
+    const existing = listFacts().find((fact) => fact.key === route.key);
+    const summary = english
+      ? `${existing ? "Update" : "Save"} memory: ${route.key} = ${route.value}`
+      : `${existing ? "Actualizar" : "Guardar"} en memoria: ${route.key} = ${route.value}`;
+    const accepted = await requestConfirmation(summary, sink);
+
+    if (!accepted) {
+      text = english
+        ? "[[mood:neutral]] I did not store it, sir."
+        : "[[mood:neutral]] No lo he guardado, señor.";
+    } else {
+      try {
+        rememberFact(route.key, route.value);
+        text = english
+          ? `[[mood:pleased]] Stored in permanent memory: ${route.key} = ${route.value}.`
+          : `[[mood:pleased]] Guardado en mi memoria permanente: ${route.key} = ${route.value}.`;
+      } catch (error) {
+        text = english
+          ? `[[mood:stern]] I could not store it: ${error.message}.`
+          : `[[mood:stern]] No pude guardarlo: ${error.message}.`;
+      }
+    }
+  } else if (route.action === "forget") {
+    const exists = listFacts().some((fact) => fact.key === route.key);
+    if (!exists) {
+      text = english
+        ? `[[mood:wry]] I have nothing stored under ${route.key}, sir.`
+        : `[[mood:wry]] No tengo nada guardado bajo ${route.key}, señor.`;
+    } else {
+      const summary = english
+        ? `Delete memory: ${route.key}`
+        : `Borrar de memoria: ${route.key}`;
+      const accepted = await requestConfirmation(summary, sink);
+      if (!accepted) {
+        text = english
+          ? "[[mood:neutral]] I left it in place, sir."
+          : "[[mood:neutral]] Lo he dejado como estaba, señor.";
+      } else {
+        forgetFact(route.key);
+        text = english
+          ? `[[mood:neutral]] Deleted ${route.key} from memory.`
+          : `[[mood:neutral]] He borrado ${route.key} de mi memoria.`;
+      }
+    }
+  } else {
+    return;
+  }
+
+  const parsed = parseMood(text);
+  history = trimHistory([
+    ...history,
+    { role: "user", content: userText },
+    { role: "assistant", content: parsed.text },
+  ]);
+  saveHistory();
+  sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
+}
+
 async function runReminderRoute(route, sink, userText) {
   sink({ type: "tool", name: "set_reminder", status: "running" });
 
@@ -552,6 +634,14 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
   let reminderToolRan = false;
 
   try {
+    const memoryIntent = parseMemoryIntent(text);
+    if (memoryIntent) {
+      await runMemoryRoute(memoryIntent, sink, text);
+      busy = false;
+      controller = null;
+      return;
+    }
+
     const reminder = routeReminder(text);
     if (reminder) {
       await runReminderRoute(reminder, sink, text);
