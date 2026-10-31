@@ -11,7 +11,7 @@
     "think": false
   },
   "voice": {
-    "autoSpeak": true,
+    "autoSpeak": false,
     "en": {
       "engine": "kokoro",
       "voice": "bm_lewis",
@@ -46,7 +46,7 @@
   "avatar": {
     "window": {
       "passive": {
-        "width": 200,
+        "width": 380,
         "height": 330
       },
       "interactive": {
@@ -80,12 +80,12 @@
     "minMinutes": 20,
     "maxMinutes": 45,
     "silentHours": [
-      0,
-      0
+      23,
+      7
     ],
     "dailyCap": 6,
     "speak": true,
-    "language": "es",
+    "language": "en",
     "everyMinutes": 30,
     "generator": "model"
   }
