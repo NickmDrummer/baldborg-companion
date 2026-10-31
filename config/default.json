@@ -15,13 +15,13 @@
       "engine": "kokoro",
       "voice": "bm_lewis",
       "lang": "en-gb",
-      "speed": 1.0
+      "speed": 1
     },
     "es": {
       "engine": "kokoro",
       "voice": "em_alex",
       "lang": "es",
-      "speed": 1.0
+      "speed": 1
     },
     "stt": {
       "model": "small",

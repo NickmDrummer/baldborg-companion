@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("baldborg", {
   confirmTool: (id, accepted) => ipcRenderer.invoke("tools:confirm", id, accepted),
   getHistory: () => ipcRenderer.invoke("brain:history"),
   resetMemory: () => ipcRenderer.invoke("brain:reset"),
+  runCommand: (text) => ipcRenderer.invoke("app:command", text),
 
   onModeChanged: (callback) => {
     const listener = (_event, mode) => callback(mode);

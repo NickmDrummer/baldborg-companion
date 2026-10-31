@@ -31,7 +31,13 @@ import {
   warmTranscription,
 } from "./stt.js";
 import { autoSpeakEnabled, detectLanguage, stopVoice, synthesize, voiceStatus } from "./voice.js";
-import { loadUserTools, resumeReminders, setReminderNotifier } from "./tools.js";
+import {
+  loadUserTools,
+  resumeReminders,
+  setDefaultCity,
+  setFavouriteTeam,
+  setReminderNotifier,
+} from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -561,6 +567,75 @@ function runChat(text, language) {
   );
 }
 
+/** Slash commands typed in the chat. They never reach the model. */
+function runAppCommand(raw) {
+  const [command, ...rest] = raw.trim().split(/\s+/);
+  const argument = rest.join(" ").trim();
+  const name = command.toLowerCase();
+
+  switch (name) {
+    case "/help":
+      return {
+        ok: true,
+        message:
+          "Comandos:\n" +
+          "/mute [on|off] — silenciar o activar la voz\n" +
+          "/clean-history — borrar la memoria de la conversación\n" +
+          "/club <equipo> — cambiar el equipo favorito\n" +
+          "/city <ciudad> — cambiar la ciudad del clima\n" +
+          "/help — esta lista",
+      };
+
+    case "/mute": {
+      const value = argument.toLowerCase();
+      const next = value === "on" ? true : value === "off" ? false : !state.muted;
+      setMuted(next);
+      return { ok: true, message: next ? "Voz silenciada, señor." : "Voz activada, señor." };
+    }
+
+    case "/unmute":
+      setMuted(false);
+      return { ok: true, message: "Voz activada, señor." };
+
+    case "/clean-history":
+    case "/forget":
+    case "/reset":
+      if (isBusy()) cancelChat();
+      resetHistory();
+      return {
+        ok: true,
+        reset: true,
+        message: "Memoria borrada. Empezamos de nuevo, sin testigos.",
+      };
+
+    case "/club": {
+      if (!argument) return { ok: false, message: "Uso: /club <equipo>" };
+      try {
+        const team = setFavouriteTeam(argument);
+        return { ok: true, message: `Club favorito: ${team}.` };
+      } catch (error) {
+        return { ok: false, message: `No pude guardar el club: ${error.message}` };
+      }
+    }
+
+    case "/city": {
+      if (!argument) return { ok: false, message: "Uso: /city <ciudad>" };
+      try {
+        const city = setDefaultCity(argument);
+        return { ok: true, message: `Ciudad por defecto: ${city}.` };
+      } catch (error) {
+        return { ok: false, message: `No pude guardar la ciudad: ${error.message}` };
+      }
+    }
+
+    default:
+      return {
+        ok: false,
+        message: `Comando desconocido: ${command}. Escriba /help para ver la lista.`,
+      };
+  }
+}
+
 function listenNotice(text) {
   win?.webContents.send("beat:event", {
     type: "beat",
@@ -768,6 +843,10 @@ function registerIpc() {
     runChat(text.trim());
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
+  ipcMain.handle("app:command", (_event, raw) => {
+    if (typeof raw !== "string" || !raw.trim()) return { ok: false, message: "" };
+    return runAppCommand(raw);
+  });
   ipcMain.handle("tools:confirm", (_event, id, accepted) => confirmAction(id, accepted));
   ipcMain.handle("brain:history", () => getHistory());
 

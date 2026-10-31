@@ -85,6 +85,7 @@ interface BaldborgApi {
   onListenState: (callback: (state: ListenState) => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
+  runCommand: (text: string) => Promise<{ ok: boolean; message: string; reset?: boolean }>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
@@ -376,10 +377,34 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [mode, busy, pendingConfirm]);
 
+  const executeCommand = async (text: string) => {
+    const result = await api?.runCommand(text);
+    if (!result) return;
+    if (result.reset) {
+      streamingId.current = null;
+      setBusy(false);
+      setPendingConfirm(null);
+      setActiveTool(null);
+      setEntries([{ id: nextId++, role: "assistant", text: result.message }]);
+      return;
+    }
+    setEntries((current) => [
+      ...current,
+      { id: nextId++, role: "user", text },
+      { id: nextId++, role: "assistant", text: result.message },
+    ]);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text) return;
+    if (text.startsWith("/")) {
+      setDraft("");
+      void executeCommand(text);
+      return;
+    }
+    if (busy) return;
 
     const assistantId = nextId++;
     streamingId.current = assistantId;
@@ -495,7 +520,7 @@ export default function App() {
                     ? "Transcribiendo…"
                     : busy
                       ? "El núcleo está respondiendo…"
-                      : "Escriba su consulta, señor."
+                      : "Escriba su consulta o /help, señor."
               }
               spellCheck={false}
               autoComplete="off"

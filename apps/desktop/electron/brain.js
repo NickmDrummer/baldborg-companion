@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
 import {
+  configuredCity,
   configuredTeam,
   listPendingReminders,
   prepareTool,
@@ -279,6 +280,22 @@ async function runReminderQuery(route, sink, userText) {
   sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
 }
 
+function needsWeatherTool(text) {
+  return /\b(clima|temperatura|lluvia|llueve|llover|calor|fr[ií]o|humedad|viento|paraguas|weather|forecast|temperature|rain|raining|hot|cold|humidity|wind|umbrella)\b/i.test(
+    text,
+  );
+}
+
+function extractCity(text) {
+  const match = text.match(
+    /\b(?:en|de|del|in|for|at)\s+([\p{Lu}][\p{L}\p{M}'-]*(?:\s+[\p{Lu}][\p{L}\p{M}'-]*)*)/u,
+  );
+  if (!match) return null;
+  const city = match[1].replace(/[?.!,;:]+$/g, "").trim();
+  const stop = /^(hoy|mañana|manana|esta|este|la|el|the|today|tomorrow|morning|afternoon|evening|night)$/i;
+  return city.length >= 3 && !stop.test(city) ? city : null;
+}
+
 function needsTeamTool(text) {
   return /\b(cu[aá]ndo (juega|jugar[aá])|pr[oó]xim[oa] partido|partidos|fixtures?|resultado|marcador|c[oó]mo qued[oó]|when (does|do|is) .* play|next match|last result|score)\b/i.test(
     text,
@@ -303,7 +320,9 @@ function genericTeamQuestion(text) {
 
 /** "el último partido del Real Madrid" must not be answered with Bayern data. */
 function namesAnotherTeam(text) {
-  const match = text.match(/\b(?:de|del|of)\s+([A-ZÀ-Ý][\wÀ-Ý]+(?:\s+[A-ZÀ-Ý][\wÀ-Ý]+)*)/);
+  const match = text.match(
+    /\b(?:de|del|of)\s+([\p{Lu}][\p{L}\p{M}'-]*(?:\s+[\p{Lu}][\p{L}\p{M}'-]*)*)/u,
+  );
   if (!match) return false;
   return !mentionsConfiguredTeam(match[1]);
 }
@@ -442,6 +461,7 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
   // valid source; other clubs still go through the normal tool call.
   const english = expectedLanguage === "en";
   if (
+    toolsEnabled() &&
     needsTeamTool(text) &&
     (mentionsConfiguredTeam(text) || (genericTeamQuestion(text) && !namesAnotherTeam(text)))
   ) {
@@ -470,7 +490,7 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
           ? "The fixture lookup failed. Say so plainly; do not invent a match or a score."
           : "La consulta de partidos falló. Dígalo claramente; no invente un partido ni un marcador.",
     });
-  } else if (needsTeamTool(text)) {
+  } else if (toolsEnabled() && needsTeamTool(text)) {
     // Another club: the model must call the tool with its name.
     messages.push({
       role: "system",
@@ -481,6 +501,39 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
         : "Esta es una pregunta de fútbol sobre otro club. Llame a team_fixtures " +
           "con el nombre de ese club antes de responder. No responda de memoria. " +
           "Las horas son la hora del estadio.",
+    });
+  }
+
+  // Same problem as fixtures: the model prefers to refuse. Give it the real
+  // weather for the requested or configured city before it answers.
+  let weatherData = null;
+  if (toolsEnabled() && needsWeatherTool(text)) {
+    const city = extractCity(text);
+    try {
+      const prepared = prepareTool("get_weather", city ? { city } : {});
+      weatherData = await prepared.run();
+    } catch (error) {
+      console.warn("[baldborg] weather prefetch failed:", error.message);
+    }
+    console.info(
+      `[baldborg] weather prefetch: ${weatherData ? weatherData.place : "failed"}`,
+    );
+
+    messages.push({
+      role: "system",
+      content: weatherData
+        ? english
+          ? `Authoritative weather data for this turn: ${JSON.stringify({
+              place: weatherData.place,
+              summary: weatherData.summaryEn,
+            })}. Answer only from these data, never from memory. Do not refuse: the data is available.`
+          : `Datos autoritativos del clima para este turno: ${JSON.stringify({
+              place: weatherData.place,
+              summary: weatherData.summary,
+            })}. Responda solo con estos datos, nunca de memoria. No se niegue: los datos están disponibles.`
+        : english
+          ? "The weather lookup failed. Say so plainly; do not invent a forecast."
+          : "La consulta del clima falló. Dígalo claramente; no invente un pronóstico.",
     });
   }
 
@@ -576,6 +629,14 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
         finalText = retry.text;
         parsed = parseMood(finalText);
       }
+    }
+
+    // If the model still refuses despite having the data, answer directly.
+    const refusal =
+      /\b(cannot|can't|can not|unable|not within|no puedo|no tengo acceso|fuera de mi alcance|no monitor|no dispongo|no est[aá] a mi alcance)\b/i;
+    if (weatherData && refusal.test(parsed.text)) {
+      finalText = `[[mood:neutral]] ${english ? weatherData.summaryEn : weatherData.summary}`;
+      parsed = parseMood(finalText);
     }
 
     // Guard against claiming a reminder that was never created.

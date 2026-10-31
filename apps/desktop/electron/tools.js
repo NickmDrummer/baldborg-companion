@@ -20,6 +20,37 @@ const STATE_DIR = join(homedir(), ".config", "baldborg");
 const REMINDERS_FILE = join(STATE_DIR, "reminders.json");
 const SPORTS_KEY = "123"; // TheSportsDB public test key
 
+const WEATHER_CODES_EN = {
+  0: "clear",
+  1: "mostly clear",
+  2: "partly cloudy",
+  3: "overcast",
+  45: "fog",
+  48: "freezing fog",
+  51: "light drizzle",
+  53: "drizzle",
+  55: "heavy drizzle",
+  56: "freezing drizzle",
+  57: "heavy freezing drizzle",
+  61: "light rain",
+  63: "rain",
+  65: "heavy rain",
+  66: "freezing rain",
+  67: "heavy freezing rain",
+  71: "light snow",
+  73: "snow",
+  75: "heavy snow",
+  77: "snow grains",
+  80: "light showers",
+  81: "showers",
+  82: "violent showers",
+  85: "snow showers",
+  86: "heavy snow showers",
+  95: "thunderstorm",
+  96: "thunderstorm with hail",
+  99: "heavy thunderstorm with hail",
+};
+
 const WEATHER_CODES = {
   0: "despejado",
   1: "mayormente despejado",
@@ -233,6 +264,20 @@ export function toolDefinitions() {
 
 /* ---------------------------------------------------------------- weather -- */
 
+function weatherSummaryEn(place, current, daily) {
+  const description = WEATHER_CODES_EN[current.weather_code] ?? "mixed conditions";
+  const temp = Math.round(current.temperature_2m);
+  const feels = Math.round(current.apparent_temperature);
+  const max = Math.round(daily.temperature_2m_max[0]);
+  const min = Math.round(daily.temperature_2m_min[0]);
+  const rain = daily.precipitation_probability_max?.[0] ?? 0;
+  return (
+    `${place}: ${temp} °C (feels like ${feels} °C), ${description}. ` +
+    `Humidity ${Math.round(current.relative_humidity_2m)} %, wind ${Math.round(current.wind_speed_10m)} km/h. ` +
+    `Today max ${max} / min ${min}, rain probability ${rain} %.`
+  );
+}
+
 function weatherSummary(place, current, daily) {
   const description = WEATHER_CODES[current.weather_code] ?? "condiciones variables";
   const temp = Math.round(current.temperature_2m);
@@ -274,6 +319,7 @@ async function weather(cityArg) {
   return {
     place: label,
     summary: weatherSummary(label, forecast.current, forecast.daily),
+    summaryEn: weatherSummaryEn(label, forecast.current, forecast.daily),
     current: forecast.current,
     daily: forecast.daily,
   };
@@ -715,4 +761,36 @@ export function toolsEnabled() {
 
 export function configuredTeam() {
   return toolsConfig().team.name;
+}
+
+export function configuredCity() {
+  return toolsConfig().weather.defaultCity;
+}
+
+function updateConfig(mutator) {
+  const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  mutator(raw);
+  writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2) + "\n");
+}
+
+export function setFavouriteTeam(name) {
+  const value = name.trim();
+  if (!value) throw new Error("empty team");
+  updateConfig((raw) => {
+    raw.tools = raw.tools ?? {};
+    raw.tools.team = { ...(raw.tools.team ?? {}), name: value };
+  });
+  matchCache = null;
+  return value;
+}
+
+export function setDefaultCity(name) {
+  const value = name.trim();
+  if (!value) throw new Error("empty city");
+  updateConfig((raw) => {
+    raw.tools = raw.tools ?? {};
+    raw.tools.weather = { ...(raw.tools.weather ?? {}), defaultCity: value };
+  });
+  weatherCache = null;
+  return value;
 }
