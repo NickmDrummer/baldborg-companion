@@ -20,6 +20,7 @@ import {
   toolDefinitions,
   toolsEnabled,
 } from "./tools.js";
+import { memoryBlock } from "./memory.js";
 import { detectLanguage } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -451,11 +452,13 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
       : "Reply only in Spanish, using formal usted.";
   // Volatile context goes last so Ollama's prompt cache keeps the stable
   // prefix (system prompt + history) between turns.
+  const memory = memoryBlock(text);
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history,
     { role: "system", content: clockContext() },
     { role: "system", content: languageInstruction },
+    ...(memory ? [{ role: "system", content: memory }] : []),
     userEntry,
   ];
 

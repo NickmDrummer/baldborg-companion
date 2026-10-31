@@ -37,6 +37,14 @@ import {
   parseToggle,
 } from "./commands.js";
 import {
+  forgetFact,
+  listFacts,
+  memoryCount,
+  normaliseKey,
+  parseFact,
+  rememberFact,
+} from "./memory.js";
+import {
   configSummary,
   setAutoSpeak,
   setAvatarMaterial,
@@ -621,6 +629,7 @@ function configMessage() {
       `Equipo: ${c.team}`,
       `Ciudad: ${c.city}`,
       `Herramientas: ${c.toolsEnabled ? "activas" : "desactivadas"}`,
+      `Memoria: ${memoryCount()} hecho${memoryCount() === 1 ? "" : "s"}`,
     ].join("\n");
   } catch (error) {
     return `No pude leer la configuración: ${error.message}`;
@@ -685,6 +694,9 @@ function runAppCommand(raw) {
           "/language es|en|auto — idioma de los beats\n" +
           "/club <equipo> — cambiar el equipo favorito\n" +
           "/city <ciudad> — cambiar la ciudad del clima\n" +
+          "/remember clave = valor — guardar un hecho\n" +
+          "/memory — ver la memoria de largo plazo\n" +
+          "/forget-fact clave — borrar un hecho\n" +
           "/clean-history — borrar la memoria de la conversación\n" +
           "/help — esta lista",
       };
@@ -805,6 +817,41 @@ function runAppCommand(raw) {
         reset: true,
         message: "Memoria borrada. Empezamos de nuevo, sin testigos.",
       };
+
+    case "/remember": {
+      const parsed = parseFact(argument);
+      if (parsed.error) return { ok: false, message: parsed.error };
+      try {
+        const fact = rememberFact(parsed.key, parsed.value);
+        return { ok: true, message: `Recordado: ${fact.key} = ${fact.value}.` };
+      } catch (error) {
+        return { ok: false, message: `No pude guardarlo: ${error.message}` };
+      }
+    }
+
+    case "/memory": {
+      const facts = listFacts();
+      if (!facts.length) {
+        return {
+          ok: true,
+          message: "Mi memoria está vacía. Use /remember clave = valor.",
+        };
+      }
+      return {
+        ok: true,
+        message:
+          `Memoria (${facts.length}):\n` +
+          facts.map((fact) => `· ${fact.key}: ${fact.value}`).join("\n"),
+      };
+    }
+
+    case "/forget-fact": {
+      const key = normaliseKey(argument);
+      if (!key) return { ok: false, message: "Uso: /forget-fact <clave>" };
+      return forgetFact(key)
+        ? { ok: true, message: `Olvidado: ${key}.` }
+        : { ok: false, message: `No tengo ningún hecho con la clave ${key}.` };
+    }
 
     case "/club": {
       if (!argument) return { ok: false, message: "Uso: /club <equipo>" };

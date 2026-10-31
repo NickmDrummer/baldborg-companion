@@ -19,6 +19,7 @@ import {
 } from "../apps/desktop/electron/commands.js";
 import { nextIntervalMinutes } from "../apps/desktop/electron/beats.js";
 import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
+import { normaliseKey, parseFact } from "../apps/desktop/electron/memory.js";
 
 const ARGENTINA = "America/Argentina/Buenos_Aires";
 
@@ -138,4 +139,22 @@ test("silent hours parse ranges and off", () => {
   assert.deepEqual(parseSilentHours("off"), { start: 0, end: 0 });
   assert.equal(parseSilentHours("24-8"), null);
   assert.equal(parseSilentHours("noche"), null);
+});
+
+test("remember parses key/value facts and normalizes keys", () => {
+  assert.deepEqual(parseFact("nombre = Nicolás"), { key: "nombre", value: "Nicolás" });
+  assert.deepEqual(parseFact("Ciudad: Rosario"), { key: "ciudad", value: "Rosario" });
+  assert.equal(normaliseKey("Color favorito"), "color_favorito");
+  assert.equal(normaliseKey("  ¿Cómo estás?  "), "como_estas");
+});
+
+test("remember rejects missing separators and credentials", () => {
+  assert.ok(parseFact("sin separador").error);
+  assert.ok(parseFact("password = hunter2").error);
+  assert.ok(parseFact("nota = abcdefghijklmnopqrstuvwxyz123456").error);
+});
+
+test("remember collapses whitespace in values", () => {
+  const fact = parseFact("nota = primera línea\nsegunda línea");
+  assert.equal(fact.value, "primera línea segunda línea");
 });
