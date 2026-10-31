@@ -14,7 +14,7 @@ o.window("^baldborg-desktop$", {
 -- Placement is a separate rule so it is evaluated after `float` is in effect.
 -- Size matches passive mode; the app grows the surface when the chat opens.
 o.window("^baldborg-desktop$", {
-  move = { "(monitor_w-200-24)", "(monitor_h-330-24)" },
+  move = { "(monitor_w-380-24)", "(monitor_h-330-24)" },
 })
 
 -- These keys belong to Baldborg now: SUPER+SHIFT+D was Docker and

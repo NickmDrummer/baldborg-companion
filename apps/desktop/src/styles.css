@@ -22,7 +22,7 @@ body,
   user-select: none;
 }
 
-/* 380x300 window: 8 + 220 canvas + 8 + 52 chat + 12 = 300 */
+/* 380px wide in both modes; the window only grows downwards for chat. */
 .stage {
   height: 100%;
   width: 100%;

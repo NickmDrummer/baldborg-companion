@@ -139,7 +139,8 @@ function avatarMaterial() {
 }
 
 const SIZES = {
-  passive: { width: 200, height: 330 },
+  // Keep the same width in both modes: idle -> chat only grows downwards.
+  passive: { width: 380, height: 330 },
   interactive: { width: 380, height: 460 },
 };
 /** Gap between the overlay and the monitor edge, in px. */
@@ -343,12 +344,17 @@ async function applyWindowGeometry(next) {
   const size = SIZES[next] ?? SIZES.passive;
   const client = hyprlandClient();
   const monitor = monitorForClient(client);
+  if (!monitor) return;
 
-  // Passive mode usually starts at the right size; skip the focus dance.
+  const expectedX = monitor.x + monitor.width - size.width - EDGE_MARGIN;
+  const expectedY = monitor.y + monitor.height - size.height - EDGE_MARGIN;
+
+  // Already in the right place and size: skip the focus dance.
   if (
-    mode === "passive" &&
     client?.size?.[0] === size.width &&
-    client?.size?.[1] === size.height
+    client?.size?.[1] === size.height &&
+    Math.abs(client.at[0] - expectedX) < 8 &&
+    Math.abs(client.at[1] - expectedY) < 8
   ) {
     return;
   }
@@ -362,25 +368,9 @@ async function applyWindowGeometry(next) {
   await setOverlayFocusable(true);
   await focusOverlay();
   await hyprDispatch(`hl.dsp.window.resize({ x = ${size.width}, y = ${size.height} })`);
-
-  if (client?.at && monitor) {
-    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-    const headCenterX = client.at[0] + client.size[0] / 2;
-    const globalX = clamp(
-      Math.round(headCenterX - size.width / 2),
-      monitor.x + EDGE_MARGIN,
-      monitor.x + monitor.width - size.width - EDGE_MARGIN,
-    );
-    const globalY = clamp(
-      client.at[1],
-      monitor.y + EDGE_MARGIN,
-      monitor.y + monitor.height - size.height - EDGE_MARGIN,
-    );
-
-    await hyprDispatch(
-      `hl.dsp.window.move({ x = ${globalX - monitor.x}, y = ${globalY - monitor.y} })`,
-    );
-  }
+  await hyprDispatch(
+    `hl.dsp.window.move({ x = ${expectedX - monitor.x}, y = ${expectedY - monitor.y} })`,
+  );
 
   if (mode === "passive") {
     await setOverlayFocusable(false);
@@ -398,8 +388,6 @@ function startBeatScheduler() {
   });
   beatsRunning = true;
 }
-
-/* ---------------------------------------------------------------- window -- */
 
 function createWindow() {
   win = new BrowserWindow({
@@ -523,9 +511,10 @@ async function applyMode(next) {
     win.webContents.send("window:focus");
   }
 
-  win.webContents.send("mode:changed", mode);
   updateTrayMenu();
-  applyWindowGeometry(mode);
+  // Resize first, then let the renderer swap the layout.
+  await applyWindowGeometry(mode);
+  win.webContents.send("mode:changed", mode);
 }
 
 function toggleMode() {
