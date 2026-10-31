@@ -9,13 +9,12 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, loadavg, totalmem, freemem, uptime } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { makeQuip } from "./quip.js";
+import { readConfig, updateConfig } from "./settings.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 const STATE_DIR = join(homedir(), ".config", "baldborg");
 const REMINDERS_FILE = join(STATE_DIR, "reminders.json");
 const SPORTS_KEY = "123"; // TheSportsDB public test key
@@ -95,7 +94,7 @@ export function lastMatch() {
 
 function config() {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    return readConfig();
   } catch {
     return {};
   }
@@ -568,6 +567,31 @@ function prepareReminder(args) {
 
 /* ------------------------------------------------------------------ team -- */
 
+/**
+ * TheSportsDB timestamps are UTC. Format them in the client's timezone, once,
+ * so neither the caller nor the model has to convert them again.
+ */
+export function formatFixture(event, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
+  const date = event.strTimestamp ? new Date(`${event.strTimestamp}Z`) : null;
+  const options = {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  };
+  return {
+    event: event.strEvent,
+    league: event.strLeague,
+    whenIso: date ? date.toISOString() : null,
+    when: date ? date.toLocaleString("es-MX", options) : event.dateEvent,
+    whenEn: date ? date.toLocaleString("en-GB", options) : event.dateEvent,
+    score: event.intHomeScore != null ? `${event.intHomeScore}-${event.intAwayScore}` : null,
+  };
+}
+
 async function teamFixtures(teamArg) {
   const configured = toolsConfig().team.name;
   const name = (teamArg ?? configured ?? "").trim();
@@ -588,40 +612,8 @@ async function teamFixtures(teamArg) {
     ),
   ]);
 
-  const format = (event) => {
-    const date = event.strTimestamp ? new Date(`${event.strTimestamp}Z`) : null;
-    return {
-      event: event.strEvent,
-      league: event.strLeague,
-      whenIso: date ? date.toISOString() : null,
-      // TheSportsDB timestamps are UTC. The client cares about its own clock,
-      // so format in the system timezone and never reconvert downstream.
-      when: date
-        ? date.toLocaleString("es-MX", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-        : event.dateEvent,
-      whenEn: date
-        ? date.toLocaleString("en-GB", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-        : event.dateEvent,
-      score: event.intHomeScore != null ? `${event.intHomeScore}-${event.intAwayScore}` : null,
-    };
-  };
-
-  const upcoming = (next.events ?? []).slice(0, 3).map(format);
-  const previous = (last.results ?? []).slice(0, 1).map(format);
+  const upcoming = (next.events ?? []).slice(0, 3).map((event) => formatFixture(event));
+  const previous = (last.results ?? []).slice(0, 1).map((event) => formatFixture(event));
 
   if (upcoming[0]) {
     matchCache = { event: upcoming[0].event, when: upcoming[0].whenIso, at: Date.now() };
@@ -791,12 +783,6 @@ export function configuredTeam() {
 
 export function configuredCity() {
   return toolsConfig().weather.defaultCity;
-}
-
-function updateConfig(mutator) {
-  const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
-  mutator(raw);
-  writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2) + "\n");
 }
 
 export function setFavouriteTeam(name) {

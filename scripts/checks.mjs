@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+/**
+ * Regression checks for the parts that broke before: fixture time zones,
+ * language detection, slash-command parsing and the reminder-quip filters.
+ *
+ * Run with: node scripts/checks.mjs
+ */
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { formatFixture } from "../apps/desktop/electron/tools.js";
+import { detectLanguage } from "../apps/desktop/electron/voice.js";
+import { parseCommand, parseToggle } from "../apps/desktop/electron/commands.js";
+import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
+
+const ARGENTINA = "America/Argentina/Buenos_Aires";
+
+function fixture(timestamp, overrides = {}) {
+  return {
+    strEvent: "Bayern Munich vs Borussia Dortmund",
+    strLeague: "German Bundesliga",
+    strTimestamp: timestamp,
+    dateEvent: timestamp.slice(0, 10),
+    ...overrides,
+  };
+}
+
+test("fixture converts UTC to Argentina time", () => {
+  const match = formatFixture(fixture("2026-10-31T17:30:00"), ARGENTINA);
+  assert.equal(match.whenIso, "2026-10-31T17:30:00.000Z");
+  assert.match(match.when, /14:30/);
+  assert.match(match.whenEn, /14:30/);
+  assert.match(match.when, /31/);
+});
+
+test("fixture handles a match that is the previous day in Argentina", () => {
+  const match = formatFixture(fixture("2026-10-31T00:15:00"), ARGENTINA);
+  assert.match(match.when, /21:15/);
+  assert.match(match.when, /30/);
+});
+
+test("fixture formatting does not invent a time for missing timestamps", () => {
+  const match = formatFixture({ strEvent: "Test", dateEvent: "2026-11-01" }, ARGENTINA);
+  assert.equal(match.whenIso, null);
+  assert.equal(match.when, "2026-11-01");
+});
+
+test("language detection handles short English and Spanish messages", () => {
+  assert.equal(detectLanguage("When does Bayern play next?"), "en");
+  assert.equal(detectLanguage("What is the weather in Rosario?"), "en");
+  assert.equal(detectLanguage("Remind me to check the build"), "en");
+  assert.equal(detectLanguage("¿Cómo está el clima en Rosario?"), "es");
+  assert.equal(detectLanguage("Recuérdame llamar a mamá"), "es");
+  assert.equal(detectLanguage("fútbol"), "es");
+});
+
+test("slash commands keep arguments with spaces", () => {
+  assert.deepEqual(parseCommand("/club Bayern Munich"), {
+    command: "/club",
+    argument: "Bayern Munich",
+  });
+  assert.deepEqual(parseCommand("  /MUTE off "), { command: "/mute", argument: "off" });
+  assert.deepEqual(parseCommand("/help"), { command: "/help", argument: "" });
+});
+
+test("toggle parsing is explicit and rejects unknown values", () => {
+  assert.equal(parseToggle("", true), false);
+  assert.equal(parseToggle("", false), true);
+  assert.equal(parseToggle("off", true), false);
+  assert.equal(parseToggle("on", false), true);
+  assert.equal(parseToggle("sí", false), true);
+  assert.equal(parseToggle("quizá", true), null);
+});
+
+test("quip validation accepts a contextual line", () => {
+  const quip =
+    "Usted no posterga el informe; posterga el momento en que alguien lo lea.";
+  assert.equal(isAcceptableQuip(quip, "revisar el informe", "es"), true);
+});
+
+test("quip validation rejects numbers, tuteo, filler and placeholders", () => {
+  const base = "Usted no posterga el informe; ";
+  assert.equal(
+    isAcceptableQuip(`${base}posterga el 80 % de la culpa.`, "revisar el informe", "es"),
+    false,
+  );
+  assert.equal(
+    isAcceptableQuip(`${base}posterga tu culpa.`, "revisar el informe", "es"),
+    false,
+  );
+  assert.equal(
+    isAcceptableQuip(`${base}posterga la prioridad.`, "revisar el informe", "es"),
+    false,
+  );
+  assert.equal(
+    isAcceptableQuip(`${base}posterga la verdad incómoda.`, "revisar el informe", "es"),
+    false,
+  );
+  assert.equal(isAcceptableQuip("La culpa no se cura.", "revisar el informe", "es"), false);
+});
+
+test("quip validation rejects a verbatim example", () => {
+  const example = "Usted no posterga el informe; posterga el momento en que alguien lo lea.";
+  assert.equal(
+    isAcceptableQuip(example, "revisar el informe", "es", [example]),
+    false,
+  );
+});

@@ -198,7 +198,7 @@ function clean(text) {
     .trim();
 }
 
-function acceptable(quip, reminderText, language, examples) {
+export function isAcceptableQuip(quip, reminderText, language, examples = []) {
   if (!quip || quip.length > 170) return false;
   if ((quip.match(/[.!?]/g) ?? []).length > 2) return false;
   if (quip.split(/\s+/).length > 20) return false;
@@ -297,7 +297,7 @@ Escriba solo la frase ahora.`;
   // placeholder, and a retry is cheaper than shipping a bad line.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const quip = await generate(prompt);
-    if (quip && acceptable(quip, reminderText, language, examples)) {
+    if (quip && isAcceptableQuip(quip, reminderText, language, examples)) {
       console.info(`[baldborg] quip: ${quip}`);
       return quip;
     }

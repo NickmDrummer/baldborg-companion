@@ -22,6 +22,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
 import { forceBeat, noteInteraction, noteLanguage, setLanguage, startBeats, stopBeats } from "./beats.js";
+import { parseCommand, parseToggle } from "./commands.js";
+import {
+  configSummary,
+  setAutoSpeak,
+  setAvatarMaterial,
+  setBeatsEnabled,
+  setBeatsLanguage,
+} from "./settings.js";
 import {
   abortListening,
   isListening,
@@ -355,6 +363,17 @@ async function applyWindowGeometry(next) {
   }
 }
 
+let beatsRunning = false;
+
+function startBeatScheduler() {
+  startBeats({
+    send: (event) => win?.webContents.send("beat:event", event),
+    isMuted: () => state.muted,
+    getMode: () => mode,
+  });
+  beatsRunning = true;
+}
+
 /* ---------------------------------------------------------------- window -- */
 
 function createWindow() {
@@ -405,11 +424,11 @@ function createWindow() {
   // Keep the chat input focused whenever the compositor focuses the window.
   win.on("focus", () => win?.webContents.send("window:focus"));
 
-  startBeats({
-    send: (event) => win?.webContents.send("beat:event", event),
-    isMuted: () => state.muted,
-    getMode: () => mode,
-  });
+  try {
+    if (configSummary().beatsEnabled) startBeatScheduler();
+  } catch {
+    startBeatScheduler();
+  }
 
   win.on("closed", () => {
     win = null;
@@ -568,27 +587,59 @@ function runChat(text, language) {
 }
 
 /** Slash commands typed in the chat. They never reach the model. */
-function runAppCommand(raw) {
-  const [command, ...rest] = raw.trim().split(/\s+/);
-  const argument = rest.join(" ").trim();
-  const name = command.toLowerCase();
+function configMessage() {
+  try {
+    const c = configSummary();
+    return [
+      `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
+      `Voz automática: ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
+      `Beats: ${c.beatsEnabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ${c.beatsMin}-${c.beatsMax} min · tope ${c.dailyCap}`,
+      `Avatar: ${c.material}`,
+      `Equipo: ${c.team}`,
+      `Ciudad: ${c.city}`,
+      `Herramientas: ${c.toolsEnabled ? "activas" : "desactivadas"}`,
+    ].join("\n");
+  } catch (error) {
+    return `No pude leer la configuración: ${error.message}`;
+  }
+}
 
-  switch (name) {
+function runAppCommand(raw) {
+  const { command, argument } = parseCommand(raw);
+
+  switch (command) {
     case "/help":
       return {
         ok: true,
         message:
           "Comandos:\n" +
+          "/config — ver todos los ajustes\n" +
+          "/status — estado del companion y del modelo\n" +
           "/mute [on|off] — silenciar o activar la voz\n" +
-          "/clean-history — borrar la memoria de la conversación\n" +
+          "/voice [on|off] — voz automática persistente\n" +
+          "/beats [on|off] — activar o detener los beats\n" +
+          "/avatar normal|hologram — material del avatar\n" +
+          "/language es|en|auto — idioma de los beats\n" +
           "/club <equipo> — cambiar el equipo favorito\n" +
           "/city <ciudad> — cambiar la ciudad del clima\n" +
+          "/clean-history — borrar la memoria de la conversación\n" +
           "/help — esta lista",
       };
 
+    case "/config":
+      return { ok: true, message: configMessage() };
+
+    case "/status": {
+      const runtime =
+        `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ` +
+        `${isBusy() ? "ocupado" : "libre"} · beats ${beatsRunning ? "activos" : "detenidos"} · ` +
+        `micrófono ${isListening() ? "activo" : "inactivo"}`;
+      return { ok: true, message: `${runtime}\n${configMessage()}` };
+    }
+
     case "/mute": {
-      const value = argument.toLowerCase();
-      const next = value === "on" ? true : value === "off" ? false : !state.muted;
+      const next = parseToggle(argument, state.muted);
+      if (next === null) return { ok: false, message: "Uso: /mute [on|off]" };
       setMuted(next);
       return { ok: true, message: next ? "Voz silenciada, señor." : "Voz activada, señor." };
     }
@@ -596,6 +647,53 @@ function runAppCommand(raw) {
     case "/unmute":
       setMuted(false);
       return { ok: true, message: "Voz activada, señor." };
+
+    case "/voice": {
+      const next = parseToggle(argument, autoSpeakEnabled());
+      if (next === null) return { ok: false, message: "Uso: /voice [on|off]" };
+      setAutoSpeak(next);
+      win?.webContents.send("voice:autoSpeak", next);
+      return {
+        ok: true,
+        message: next ? "Voz automática activada." : "Voz automática desactivada.",
+      };
+    }
+
+    case "/beats": {
+      const next = parseToggle(argument, beatsRunning);
+      if (next === null) return { ok: false, message: "Uso: /beats [on|off]" };
+      setBeatsEnabled(next);
+      if (next && !beatsRunning) startBeatScheduler();
+      if (!next && beatsRunning) {
+        stopBeats();
+        beatsRunning = false;
+      }
+      return { ok: true, message: next ? "Beats activados." : "Beats detenidos." };
+    }
+
+    case "/avatar": {
+      const value = argument.toLowerCase();
+      if (!value) return { ok: false, message: "Uso: /avatar normal|hologram" };
+      try {
+        setAvatarMaterial(value);
+        win?.webContents.send("avatar:material", value);
+        return { ok: true, message: `Material del avatar: ${value}.` };
+      } catch (error) {
+        return { ok: false, message: `Uso: /avatar normal|hologram (${error.message})` };
+      }
+    }
+
+    case "/language": {
+      const value = argument.toLowerCase();
+      if (!value) return { ok: false, message: "Uso: /language es|en|auto" };
+      try {
+        setBeatsLanguage(value);
+        setLanguage(value);
+        return { ok: true, message: `Idioma de los beats: ${value}.` };
+      } catch (error) {
+        return { ok: false, message: `Uso: /language es|en|auto (${error.message})` };
+      }
+    }
 
     case "/clean-history":
     case "/forget":
@@ -631,7 +729,7 @@ function runAppCommand(raw) {
     default:
       return {
         ok: false,
-        message: `Comando desconocido: ${command}. Escriba /help para ver la lista.`,
+        message: `Comando desconocido: ${command || "(vacío)"}. Escriba /help para ver la lista.`,
       };
   }
 }
@@ -919,6 +1017,7 @@ if (!gotLock) {
 
   app.on("will-quit", () => {
     stopBeats();
+    beatsRunning = false;
     stopVoice();
     restoreNoWarps();
     globalShortcut.unregisterAll();

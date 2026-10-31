@@ -88,6 +88,8 @@ interface BaldborgApi {
   runCommand: (text: string) => Promise<{ ok: boolean; message: string; reset?: boolean }>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
+  onAutoSpeak: (callback: (value: boolean) => void) => () => void;
+  onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
@@ -192,6 +194,10 @@ export default function App() {
       }
     });
     const offMuted = api?.onMutedChanged(setMuted);
+    const offAutoSpeak = api?.onAutoSpeak((value) => {
+      autoSpeakRef.current = value;
+    });
+    const offMaterial = api?.onMaterial((value) => setMaterial(value));
 
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
@@ -329,6 +335,8 @@ export default function App() {
     return () => {
       offMode?.();
       offMuted?.();
+      offAutoSpeak?.();
+      offMaterial?.();
       offReplay?.();
       offGlitch?.();
       offBeat?.();
@@ -421,7 +429,7 @@ export default function App() {
   return (
     <div className={`stage ${mode}${locked ? " locked" : ""}`}>
       <div className="head" aria-hidden="true">
-        <Avatar mood={mood} material={material} />
+        <Avatar key={material} mood={mood} material={material} />
       </div>
 
       {mode === "passive" ? (

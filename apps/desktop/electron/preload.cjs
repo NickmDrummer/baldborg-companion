@@ -19,6 +19,16 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("mode:changed", listener);
     return () => ipcRenderer.removeListener("mode:changed", listener);
   },
+  onAutoSpeak: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("voice:autoSpeak", listener);
+    return () => ipcRenderer.removeListener("voice:autoSpeak", listener);
+  },
+  onMaterial: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("avatar:material", listener);
+    return () => ipcRenderer.removeListener("avatar:material", listener);
+  },
   onMutedChanged: (callback) => {
     const listener = (_event, muted) => callback(muted);
     ipcRenderer.on("audio:muted", listener);
