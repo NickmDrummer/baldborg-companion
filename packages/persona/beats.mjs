@@ -20,6 +20,26 @@ function clock(ctx) {
   });
 }
 
+function activitySeed(ctx, english) {
+  if (ctx.activity?.updating) {
+    return english
+      ? "The system is updating packages. Do you trust it not to break anything this time?"
+      : "El sistema está actualizando paquetes. ¿Confía en que esta vez no romperá nada?";
+  }
+  if (ctx.activity?.media) {
+    return english
+      ? `${ctx.activity.media} is playing. Is the music for you or for the keyboard?`
+      : `Suena ${ctx.activity.media}. ¿La música es para usted o para el teclado?`;
+  }
+  if (ctx.activity?.window) {
+    const window = ctx.activity.window.title || ctx.activity.window.class;
+    return english
+      ? `I see "${window}". What am I supposed to conclude?`
+      : `Veo «${window}». ¿Qué se supone que debo concluir?`;
+  }
+  return "";
+}
+
 export const BEATS = [
   {
     id: "checkin",
@@ -176,6 +196,15 @@ export const BEATS = [
     when: () => true,
     text: () => "Nada que reportar. En mi experiencia, eso suele preceder a algo.",
     textEn: () => "Nothing to report. In my experience, that usually precedes something.",
+  },
+  {
+    id: "activity",
+    weight: 4,
+    cooldownHours: 0.75,
+    mood: "wry",
+    when: (ctx) => Boolean(ctx.activity),
+    text: (ctx) => activitySeed(ctx, false),
+    textEn: (ctx) => activitySeed(ctx, true),
   },
   {
     id: "silence",

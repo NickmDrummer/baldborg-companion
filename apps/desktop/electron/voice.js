@@ -97,6 +97,7 @@ async function synthesizeAzure(text, lang, config) {
 
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length < 100) throw new Error("azure returned empty audio");
+  console.info(`[baldborg] azure tts: ${voice.voice} (${voice.lang})`);
   return { wav: buffer, lang, voice: voice.voice };
 }
 

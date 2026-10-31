@@ -159,8 +159,125 @@ export function noteLanguage(code) {
   saveState();
 }
 
+function activeWindow() {
+  try {
+    const raw = execFileSync("hyprctl", ["activewindow", "-j"], { timeout: 1500 }).toString();
+    const window = JSON.parse(raw);
+    if (!window?.class || window.class === "baldborg-desktop") return null;
+    return {
+      class: String(window.class).slice(0, 80),
+      title: String(window.title ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mprisProperty(service, property) {
+  try {
+    const output = execFileSync(
+      "busctl",
+      [
+        "--user",
+        "get-property",
+        service,
+        "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player",
+        property,
+      ],
+      { timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .toString()
+      .trim();
+    return output;
+  } catch {
+    return "";
+  }
+}
+
+function mprisMedia() {
+  try {
+    const services = execFileSync("busctl", ["--user", "list", "--no-legend"], {
+      timeout: 1200,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/)[0])
+      .filter((name) => name.startsWith("org.mpris.MediaPlayer2."))
+      .slice(0, 4);
+
+    for (const service of services) {
+      const status = mprisProperty(service, "PlaybackStatus");
+      if (!/playing/i.test(status)) continue;
+      const metadata = mprisProperty(service, "Metadata");
+      const quoteAfter = (key) => {
+        const index = metadata.indexOf(key);
+        if (index < 0) return "";
+        let rest = metadata.slice(index + key.length);
+        if (rest.startsWith('"')) rest = rest.slice(1);
+        return rest.match(/"([^"]*)"/)?.[1] ?? "";
+      };
+      const artist = quoteAfter("xesam:artist");
+      const title = quoteAfter("xesam:title");
+      const label = [artist, title].filter(Boolean).join(" — ");
+      return (label || service).replace(/\s+/g, " ").trim().slice(0, 120);
+    }
+  } catch {
+    /* MPRIS is optional */
+  }
+  return null;
+}
+
+function mediaStatus() {
+  try {
+    const status = execFileSync("playerctl", ["status"], { timeout: 1000, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    if (status === "Playing") {
+      const metadata = execFileSync(
+        "playerctl",
+        ["metadata", "--format", "{{artist}} — {{title}}"],
+        { timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
+      )
+        .toString()
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+      return metadata || status;
+    }
+  } catch {
+    /* playerctl is optional; try MPRIS below */
+  }
+  return mprisMedia();
+}
+
+function packagesUpdating() {
+  for (const process of ["pacman", "paru", "yay"]) {
+    try {
+      execFileSync("pgrep", ["-x", process], { timeout: 800, stdio: "ignore" });
+      return true;
+    } catch {
+      /* not running */
+    }
+  }
+  return false;
+}
+
+function currentActivity() {
+  const window = activeWindow();
+  const media = mediaStatus();
+  const updating = packagesUpdating();
+  if (!window && !media && !updating) return null;
+  return { window, media, updating };
+}
+
 function buildContext(language) {
   const now = new Date();
+  const activity = currentActivity();
+  if (process.env.BALDBORG_BEAT_DEBUG) {
+    console.info("[baldborg] activity:", JSON.stringify(activity));
+  }
   const weather = lastWeather();
   const match = lastMatch();
   const reminder = nextReminder();
@@ -187,6 +304,7 @@ function buildContext(language) {
       new Date(match.when).toLocaleDateString("en-CA") === now.toLocaleDateString("en-CA")
         ? match.event
         : null,
+    activity,
   };
 }
 
@@ -294,6 +412,21 @@ function poolBeat(ctx, forced) {
   return pickBeat(ctx);
 }
 
+function mentionsActivity(text, activity) {
+  if (!activity) return true;
+  const sample = String(text)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const tokens = ["music", "musica", "cancion", "song", "listen", "escuch", "terminal", "ventana", "window", "browser", "navegador", "update", "actualiz", "paquete", "package"];
+  if (activity.media) tokens.push(...activity.media.toLowerCase().split(/[^a-z0-9]+/));
+  if (activity.window) {
+    tokens.push(...String(activity.window.title ?? "").toLowerCase().split(/[^a-z0-9]+/));
+    tokens.push(...String(activity.window.class ?? "").toLowerCase().split(/[^a-z0-9]+/));
+  }
+  return tokens.some((token) => token.length >= 3 && sample.includes(token));
+}
+
 async function beatFor(ctx, language, forced) {
   const beat = poolBeat(ctx, forced);
   if (!beat) return null;
@@ -301,7 +434,10 @@ async function beatFor(ctx, language, forced) {
   const seed = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
   if (config().generator !== "pool") {
     const rewritten = await rewriteBeat(seed, language, state.recentBeats ?? []);
-    if (rewritten) {
+    if (
+      rewritten &&
+      (beat.id !== "activity" || mentionsActivity(rewritten, ctx.activity))
+    ) {
       if (!forced && !gatesPass()) return null;
       return deliver(rewritten, beat.id, beat.mood, "generated", !forced);
     }

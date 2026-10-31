@@ -46,8 +46,10 @@ import {
 } from "./memory.js";
 import {
   configSummary,
+  AZURE_VOICES,
   setAutoSpeak,
   setAvatarMaterial,
+  setAzureVoice,
   setBeatsEnabled,
   setBeatsEvery,
   setBeatsLanguage,
@@ -611,7 +613,8 @@ function configMessage() {
         : `${b.silentHours[0]}-${b.silentHours[1]}`;
     return [
       `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
-      `Voz: ${c.voiceProvider} · FX ${c.voiceEffects} · automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
+      `Voz: ${c.voiceProvider} · es ${c.voiceEs} · en ${c.voiceEn} · FX ${c.voiceEffects} · ` +
+        `automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
       `Beats: ${b.enabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
         `${c.beatsGenerator} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}`,
       `Avatar: ${c.material}`,
@@ -677,6 +680,8 @@ function runAppCommand(raw) {
           "/voice [on|off] — voz automática persistente\n" +
           "/voice provider kokoro|azure — proveedor de voz\n" +
           "/voice fx clean|device|radio|hologram|corrupt — efecto de audio\n" +
+          "/voice es|en <alias> — voz de Azure por idioma\n" +
+          "/voice list — voces disponibles\n" +
           "/beats [on|off] — activar o detener los beats\n" +
           "/beats every <min>|random — frecuencia fija o aleatoria\n" +
           "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
@@ -718,6 +723,27 @@ function runAppCommand(raw) {
           return { ok: true, message: `Efecto de voz: ${preset}.` };
         } catch (error) {
           return { ok: false, message: `No pude cambiar el efecto: ${error.message}` };
+        }
+      }
+
+      if (value === "list" || value === "voices") {
+        const lines = [
+          `Español: ${Object.keys(AZURE_VOICES.es).join(", ")}`,
+          `Inglés: ${Object.keys(AZURE_VOICES.en).join(", ")}`,
+        ];
+        return { ok: true, message: `Voces de Azure:\n${lines.join("\n")}` };
+      }
+
+      const voiceMatch = value.match(/^(es|en)\s+([a-z]+)$/);
+      if (voiceMatch) {
+        try {
+          const chosen = setAzureVoice(voiceMatch[1], voiceMatch[2]);
+          return {
+            ok: true,
+            message: `Voz ${chosen.lang}: ${chosen.voice}.`,
+          };
+        } catch (error) {
+          return { ok: false, message: `No pude cambiar la voz: ${error.message}` };
         }
       }
 
@@ -1032,10 +1058,11 @@ function startControlServer() {
       const raw = buffer.slice(0, newline).trim();
       if (raw === "beat") {
         // Show the bubble: it only renders in passive mode.
-        applyMode("passive");
-        void forceBeat()
-          .then((id) => connection.end(JSON.stringify({ beat: id }) + "\n"))
-          .catch(() => connection.end(JSON.stringify({ beat: null }) + "\n"));
+        void (async () => {
+          await applyMode("passive");
+          const id = await forceBeat();
+          connection.end(JSON.stringify({ beat: id }) + "\n");
+        })().catch(() => connection.end(JSON.stringify({ beat: null }) + "\n"));
         return;
       }
       if (raw === "status") {

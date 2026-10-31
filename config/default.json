@@ -11,7 +11,7 @@
     "think": false
   },
   "voice": {
-    "autoSpeak": false,
+    "autoSpeak": true,
     "en": {
       "engine": "kokoro",
       "voice": "bm_lewis",
@@ -35,8 +35,8 @@
         "lang": "es-MX"
       },
       "en": {
-        "voice": "en-US-AndrewMultilingualNeural",
-        "lang": "en-US"
+        "voice": "en-GB-OliverNeural",
+        "lang": "en-GB"
       }
     },
     "effects": {

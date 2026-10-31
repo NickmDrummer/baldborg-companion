@@ -29,10 +29,16 @@ const SURREAL = /(\b(s[oó]tano|humo|ascensor|portal|abismo|universo|constelaci[
 const PERSONIFY =
   /\b(teclado|pantalla|escritorio|taza|silla|mesa|pared|suelo|piso|aire|fr[ií]o|silencio)\s+([a-záéíóúñ]+\s+){0,2}(habla|dice|quiere|sabe|respira|late|palpita|teclea|tecleando|mira|mirando|espera|esperando|huele|siente|recuerda|decide|calle)\b/i;
 
+const POETIC =
+  /\b(alma|susurr\w*|poema|rima|m[aá]rmol|ceniza|venas|abismo|constelaci[oó]n|sombra|eco|desintegra\w*|derrite|palpita\w*)\b|\bcomo (?:si|un|una|el|la|los|las)\b/i;
+
+const THOUGHTFUL =
+  /[?¿]|\b(no entiendo|me pregunto|supongo|veo que|noto que|parece que|no s[eé]|why|wonder|suppose|i see|seems|do you|are you|is that|did you)\b/i;
+
 const TIME_OPEN = /^(a las|son las|it is|it's|\d{1,2}[:.]\d{2})\b/i;
 
 const TUTEO =
-  /\b(tú|tu|tus|trabajas|tienes|puedes|debes|sabes|crees|haces|estás|quieres|necesitas|buscas|sientes|moverte|quedarte|mirarte|sentarte|levantarte|ponerte|decirte|darte|hacerte|te|ti|contigo)\b/i;
+  /\b(tú|tu|tus|trabajas|tienes|puedes|debes|sabes|crees|haces|estás|quieres|necesitas|buscas|sientes|escuchas|arrastras|pides|respondes|hablas|ves|dices|pulsas|cuentas|reportas|sigues|pones|dejas|tocas|usas|abres|cierras|lees|escribes|miras|piensas|recuerdas|olvidas|empiezas|terminas|moverte|quedarte|mirarte|sentarte|levantarte|ponerte|decirte|darte|hacerte|te|ti|contigo)\b/i;
 
 const FORMAL = [
   [/\btú\b/gi, "usted"],
@@ -53,6 +59,31 @@ const FORMAL = [
   [/\bevitas\b/gi, "evita"],
   [/\bpostergas\b/gi, "posterga"],
   [/\baplazas\b/gi, "aplaza"],
+  [/\bescuchas\b/gi, "escucha"],
+  [/\barrastras\b/gi, "arrastra"],
+  [/\bpides\b/gi, "pide"],
+  [/\brespondes\b/gi, "responde"],
+  [/\bhablas\b/gi, "habla"],
+  [/\bves\b/gi, "ve"],
+  [/\bdices\b/gi, "dice"],
+  [/\bpulsas\b/gi, "pulsa"],
+  [/\bcuentas\b/gi, "cuenta"],
+  [/\breportas\b/gi, "reporta"],
+  [/\bsigues\b/gi, "sigue"],
+  [/\bpones\b/gi, "pone"],
+  [/\bdejas\b/gi, "deja"],
+  [/\btocas\b/gi, "toca"],
+  [/\busas\b/gi, "usa"],
+  [/\babres\b/gi, "abre"],
+  [/\bcierras\b/gi, "cierra"],
+  [/\blees\b/gi, "lee"],
+  [/\bescribes\b/gi, "escribe"],
+  [/\bmiras\b/gi, "mira"],
+  [/\bpiensas\b/gi, "piensa"],
+  [/\brecuerdas\b/gi, "recuerda"],
+  [/\bolvidas\b/gi, "olvida"],
+  [/\bempiezas\b/gi, "empieza"],
+  [/\bterminas\b/gi, "termina"],
   [/\bmoverte\b/gi, "moverse"],
   [/\bquedarte\b/gi, "quedarse"],
   [/\bmirarte\b/gi, "mirarse"],
@@ -119,17 +150,35 @@ function grams(text) {
   return out;
 }
 
+const EXAMPLES = {
+  es: [
+    "¿Actualiza paquetes a esta hora? ¿Es una forma de castigarse?",
+    "Suena música y usted no la escucha. ¿La puso para el teclado?",
+    "Otra terminal abierta. ¿Cree que la décima resolverá lo que las nueve no hicieron?",
+  ],
+  en: [
+    "You are updating packages at this hour. Is that a form of self-punishment?",
+    "Music is playing and you are not listening. Did you put it on for the keyboard?",
+    "Another terminal. Do you think the tenth will fix what the first nine did not?",
+  ],
+};
+
 function acceptable(text, language, recent, seed) {
   if (!text || text.length > 200) return false;
-  if (text.split(/\s+/).length > 24) return false;
+  if (text.split(/\s+/).length > 22) return false;
   if (normalise(text) === normalise(seed)) return false;
+  if (EXAMPLES[language].some((example) => normalise(example) === normalise(text))) return false;
   if (FILLER.test(text)) return false;
   if (STOCK[language].test(text)) return false;
   if (SURREAL.test(text)) return false;
   if (PERSONIFY.test(text)) return false;
   if (TIME_OPEN.test(text)) return false;
   if (language === "es" && TUTEO.test(text)) return false;
-  if ((text.match(/,/g) ?? []).length > 2) return false;
+  if ((text.match(/,/g) ?? []).length > 1) return false;
+  if (/;/.test(text)) return false;
+  if (POETIC.test(text)) return false;
+  if (!THOUGHTFUL.test(text)) return false;
+  if (/(?:[.!?]\s*){3,}/.test(text)) return false;
   if (/\b(el cliente|the client)\b/i.test(text)) return false;
 
   const candidate = grams(text);
@@ -147,30 +196,38 @@ export async function rewriteBeat(seed, language = "es", recent = []) {
 
   const prompt =
     language === "en"
-      ? `You are Baldborg, a corporate majordomo with dry, dark, ironic humour. Rewrite the line below as ONE sentence, maximum 20 words, keeping the same idea and context.
+      ? `You are Baldborg, a corporate majordomo with dry, dark, ironic humour. Write ONE spontaneous line about what is happening right now.
 
 Rules:
-- Do not invent objects, rooms, creatures or scenes. The subject is the client and the workstation: session time, fatigue, posture, cup, keyboard, screen.
-- One single observation. Do not list symptoms, use enumerations or pile up commas.
+- Maximum 22 words. At most one comma. No lists, rhymes, metaphors, similes or poetic imagery.
+- It should sound like a system that does not understand humans: ask a direct question or state a flat, ironic thought.
+- If the current activity mentions a terminal, music, a package update or an active window, make that the subject.
+- Do not personify objects. Do not narrate the activity without a verdict.
 - Address the client as "you", never as "the client" in the third person.
-- Do not personify furniture. Do not copy the original; rewrite it with a different shape.
 - No greeting, generic offer of help, closing, quotes, emojis or filler.
 - Do not repeat these recent lines or any four-word phrase from them: ${recent.length ? recent.map((line) => `"${line}"`).join(" / ") : "none"}
+- Do not copy the examples; they only show the tone.
+
+Examples: "You are updating packages at this hour. Is that a form of self-punishment?" / "Music is playing and you are not listening. Did you put it on for the keyboard?" / "Another terminal. Do you think the tenth will fix what the first nine did not?"
 
 Original: "${seed}"
-Write only the rewrite now.`
-      : `Eres Baldborg, un mayordomo corporativo con humor negro, seco e irónico. Reescribe la frase de abajo en UNA sola frase, máximo 20 palabras, con el mismo sentido y contexto.
+Write only the line now.`
+      : `Eres Baldborg, un mayordomo corporativo con humor negro, seco e irónico. Escribe UNA frase espontánea sobre lo que está pasando ahora.
 
 Reglas:
-- No invente objetos, cuartos, criaturas ni escenas. El sujeto es el cliente y la estación de trabajo: horas de sesión, fatiga, postura, taza, teclado, pantalla.
-- Una sola observación. No enumere síntomas, no haga listas ni acumule comas.
+- Máximo 22 palabras. Como mucho una coma. Sin listas, rimas, metáforas, símiles ni imágenes poéticas.
+- Debe sonar como un sistema que no entiende a los humanos: haga una pregunta directa o suelte un pensamiento seco e irónico.
+- Si la actividad actual menciona una terminal, música, una actualización de paquetes o una ventana activa, convierta eso en el tema.
+- No personifique objetos. No narre la actividad sin un veredicto.
 - Diríjase al cliente de usted, nunca hable de «el cliente» en tercera persona.
-- No personifique el mobiliario. No copie la original; reescríbala con otra forma.
 - Sin saludo, oferta genérica de ayuda, cierre, comillas, emojis ni relleno.
 - No repita estas frases recientes ni ninguna secuencia de cuatro palabras de ellas: ${recent.length ? recent.map((line) => `«${line}»`).join(" / ") : "ninguna"}
+- No copie los ejemplos; solo muestran el tono.
+
+Ejemplos: «¿Actualiza paquetes a esta hora? ¿Es una forma de castigarse?» / «Suena música y usted no la escucha. ¿La puso para el teclado?» / «Otra terminal abierta. ¿Cree que la décima resolverá lo que las nueve no hicieron?»
 
 Original: «${seed}»
-Escriba solo la reescritura ahora.`;
+Escriba solo la frase ahora.`;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {

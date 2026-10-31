@@ -17,6 +17,18 @@ export const BEAT_LANGUAGES = new Set(["es", "en", "auto"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
 export const VOICE_PROVIDERS = new Set(["kokoro", "azure"]);
 export const VOICE_EFFECTS = new Set(["clean", "device", "radio", "hologram", "corrupt"]);
+export const AZURE_VOICES = {
+  es: {
+    jorge: { voice: "es-MX-JorgeMultilingualNeural", lang: "es-MX" },
+    dalia: { voice: "es-MX-DaliaNeural", lang: "es-MX" },
+  },
+  en: {
+    oliver: { voice: "en-GB-OliverNeural", lang: "en-GB" },
+    sonia: { voice: "en-GB-SoniaNeural", lang: "en-GB" },
+    ryan: { voice: "en-GB-RyanNeural", lang: "en-GB" },
+    andrew: { voice: "en-US-AndrewMultilingualNeural", lang: "en-US" },
+  },
+};
 
 export function readConfig() {
   return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
@@ -54,6 +66,17 @@ export function setVoiceProvider(value) {
     raw.voice.provider = value;
   });
   return value;
+}
+
+export function setAzureVoice(lang, alias) {
+  if (!["es", "en"].includes(lang)) throw new Error("invalid voice language");
+  const voice = AZURE_VOICES[lang]?.[alias];
+  if (!voice) throw new Error("unknown voice alias");
+  updateConfig((raw) => {
+    raw.voice = raw.voice ?? {};
+    raw.voice.azure = { ...(raw.voice.azure ?? {}), [lang]: voice };
+  });
+  return { lang, ...voice };
 }
 
 export function setVoiceEffectsPreset(value) {
@@ -117,6 +140,8 @@ export function configSummary() {
     temperature: raw.brain?.temperature ?? 0,
     autoSpeak: raw.voice?.autoSpeak !== false,
     voiceProvider: raw.voice?.provider ?? "kokoro",
+    voiceEs: raw.voice?.azure?.es?.voice ?? "?",
+    voiceEn: raw.voice?.azure?.en?.voice ?? "?",
     voiceEffects: raw.voice?.effects?.preset ?? "device",
     sttModel: raw.voice?.stt?.model ?? "?",
     beatsEnabled: raw.beats?.enabled !== false,

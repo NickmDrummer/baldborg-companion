@@ -225,8 +225,15 @@ async function main() {
   const azureKey = process.env.AZURE_SPEECH_KEY ?? azureFile?.azureKey;
   const azureRegion = process.env.AZURE_SPEECH_REGION ?? azureFile?.azureRegion;
   if (provider === "azure") {
-    if (azureKey && azureRegion) ok("Azure configurado", `región ${azureRegion}`);
-    else warn("Azure sin clave o región", "se usará Kokoro como respaldo");
+    if (azureKey && azureRegion) {
+      ok("Azure configurado", `región ${azureRegion}`);
+      ok(
+        "Voces Azure",
+        `es ${config?.voice?.azure?.es?.voice ?? "?"} · en ${config?.voice?.azure?.en?.voice ?? "?"}`,
+      );
+    } else {
+      warn("Azure sin clave o región", "se usará Kokoro como respaldo");
+    }
   } else if (azureKey && azureRegion) {
     ok("Azure disponible pero inactivo", `región ${azureRegion}`);
   }
