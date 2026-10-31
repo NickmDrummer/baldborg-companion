@@ -16,7 +16,7 @@ const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 export const BEAT_LANGUAGES = new Set(["es", "en", "auto"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
 export const VOICE_PROVIDERS = new Set(["kokoro", "azure"]);
-export const VOICE_EFFECTS = new Set(["clean", "device", "radio", "hologram"]);
+export const VOICE_EFFECTS = new Set(["clean", "device", "radio", "hologram", "corrupt"]);
 
 export function readConfig() {
   return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));

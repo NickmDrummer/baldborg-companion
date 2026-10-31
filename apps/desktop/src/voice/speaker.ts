@@ -1,6 +1,6 @@
 import { setMouthLevel } from "../avatar/level";
 
-export type EffectsPreset = "clean" | "device" | "radio" | "hologram";
+export type EffectsPreset = "clean" | "device" | "radio" | "hologram" | "corrupt";
 
 /**
  * Plays synthesised WAV buffers and reports the audio envelope so the avatar
@@ -8,7 +8,7 @@ export type EffectsPreset = "clean" | "device" | "radio" | "hologram";
  *
  * The effects chain lives between the source and the analyser, so the jaw
  * follows the processed sound. Presets only change node parameters; the graph
- * is built once.
+ * is built once. The corrupt preset also adds a detuned second voice.
  */
 export interface Speaker {
   speak: (wav: ArrayBuffer) => Promise<void>;
@@ -26,6 +26,12 @@ interface Preset {
   echo: number;
   feedback: number;
   level: number;
+  ring: number;
+  chorusDepth: number;
+  chorusWet: number;
+  pitch: number;
+  threshold: number;
+  ratio: number;
 }
 
 const PRESETS: Record<EffectsPreset, Preset> = {
@@ -37,6 +43,12 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     echo: 0,
     feedback: 0,
     level: 1,
+    ring: 0,
+    chorusDepth: 0,
+    chorusWet: 0,
+    pitch: 1,
+    threshold: 0,
+    ratio: 1,
   },
   device: {
     drive: 2.6,
@@ -46,6 +58,12 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     echo: 0.1,
     feedback: 0.12,
     level: 0.9,
+    ring: 0,
+    chorusDepth: 0,
+    chorusWet: 0,
+    pitch: 1,
+    threshold: -14,
+    ratio: 4,
   },
   radio: {
     drive: 4.5,
@@ -55,6 +73,12 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     echo: 0.06,
     feedback: 0.08,
     level: 0.85,
+    ring: 0,
+    chorusDepth: 0,
+    chorusWet: 0,
+    pitch: 1,
+    threshold: -16,
+    ratio: 5,
   },
   hologram: {
     drive: 3,
@@ -64,6 +88,27 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     echo: 0.22,
     feedback: 0.18,
     level: 0.9,
+    ring: 0,
+    chorusDepth: 0,
+    chorusWet: 0,
+    pitch: 1,
+    threshold: -14,
+    ratio: 4,
+  },
+  corrupt: {
+    drive: 7,
+    highpass: 120,
+    lowpass: 4_200,
+    bits: 5,
+    echo: 0.24,
+    feedback: 0.3,
+    level: 0.8,
+    ring: 0.5,
+    chorusDepth: 0.006,
+    chorusWet: 0.35,
+    pitch: 0.82,
+    threshold: -18,
+    ratio: 6,
   },
 };
 
@@ -95,6 +140,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
   let context: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
   let source: AudioBufferSourceNode | null = null;
+  let extraSources: AudioBufferSourceNode[] = [];
   let frame = 0;
   let muted = false;
   let currentPreset: EffectsPreset = preset;
@@ -107,10 +153,28 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
   let delay: DelayNode | null = null;
   let feedback: GainNode | null = null;
   let wet: GainNode | null = null;
+  let ringGain: GainNode | null = null;
+  let ringDepth: GainNode | null = null;
+  let chorus: DelayNode | null = null;
+  let chorusDepth: GainNode | null = null;
+  let chorusWet: GainNode | null = null;
   let compressor: DynamicsCompressorNode | null = null;
 
   function applyPreset() {
-    if (!input || !drive || !highpass || !lowpass || !crush || !delay || !wet || !feedback) {
+    if (
+      !input ||
+      !drive ||
+      !highpass ||
+      !lowpass ||
+      !crush ||
+      !delay ||
+      !wet ||
+      !feedback ||
+      !ringDepth ||
+      !chorusDepth ||
+      !chorusWet ||
+      !compressor
+    ) {
       return;
     }
     const settings = PRESETS[currentPreset] ?? PRESETS.device;
@@ -123,10 +187,11 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
     delay.delayTime.value = 0.018;
     wet.gain.value = settings.echo;
     feedback.gain.value = settings.feedback;
-    if (compressor) {
-      compressor.threshold.value = currentPreset === "clean" ? 0 : -14;
-      compressor.ratio.value = currentPreset === "clean" ? 1 : 4;
-    }
+    ringDepth.gain.value = settings.ring;
+    chorusDepth.gain.value = settings.chorusDepth;
+    chorusWet.gain.value = settings.chorusWet;
+    compressor.threshold.value = settings.threshold;
+    compressor.ratio.value = settings.ratio;
   }
 
   function ensureContext() {
@@ -146,22 +211,42 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
       delay = context.createDelay(0.1);
       feedback = context.createGain();
       wet = context.createGain();
+      ringGain = context.createGain();
+      ringDepth = context.createGain();
+      chorus = context.createDelay(0.05);
+      chorus.delayTime.value = 0.012;
+      chorusDepth = context.createGain();
+      chorusWet = context.createGain();
       compressor = context.createDynamicsCompressor();
-      compressor.threshold.value = -12;
-      compressor.ratio.value = 4;
 
       input.connect(drive);
       drive.connect(highpass);
       highpass.connect(lowpass);
       lowpass.connect(crush);
-      crush.connect(analyser);
+      crush.connect(ringGain);
+      ringGain.connect(analyser);
       crush.connect(delay);
       delay.connect(feedback);
       feedback.connect(delay);
       delay.connect(wet);
       wet.connect(analyser);
+      crush.connect(chorus);
+      chorus.connect(chorusWet);
+      chorusWet.connect(analyser);
       analyser.connect(compressor);
       compressor.connect(context.destination);
+
+      const ringOsc = context.createOscillator();
+      ringOsc.frequency.value = 52;
+      ringOsc.connect(ringDepth);
+      ringDepth.connect(ringGain.gain);
+      ringOsc.start();
+
+      const chorusOsc = context.createOscillator();
+      chorusOsc.frequency.value = 0.55;
+      chorusOsc.connect(chorusDepth);
+      chorusDepth.connect(chorus.delayTime);
+      chorusOsc.start();
 
       applyPreset();
     }
@@ -183,6 +268,15 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
       source.disconnect();
       source = null;
     }
+    for (const extra of extraSources) {
+      try {
+        extra.stop();
+      } catch {
+        /* already stopped */
+      }
+      extra.disconnect();
+    }
+    extraSources = [];
     setMouthLevel(0);
   }
 
@@ -191,6 +285,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
     stop();
     const ctx = ensureContext();
     const buffer = await ctx.decodeAudioData(wav.slice(0));
+    const settings = PRESETS[currentPreset] ?? PRESETS.device;
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
@@ -205,6 +300,19 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
 
     source = src;
     src.start();
+
+    if (settings.pitch < 0.99) {
+      const low = ctx.createBufferSource();
+      low.buffer = buffer;
+      low.playbackRate.value = settings.pitch;
+      const lowGain = ctx.createGain();
+      lowGain.gain.value = 0.45;
+      low.connect(lowGain);
+      lowGain.connect(input!);
+      low.start();
+      extraSources.push(low);
+    }
+
     console.info("[baldborg] audio playing", buffer.duration.toFixed(2), "s");
 
     const data = new Uint8Array(analyser!.fftSize);

@@ -688,7 +688,7 @@ function runAppCommand(raw) {
           "/mute [on|off] — silenciar o activar la voz\n" +
           "/voice [on|off] — voz automática persistente\n" +
           "/voice provider kokoro|azure — proveedor de voz\n" +
-          "/voice fx clean|device|radio|hologram — efecto de audio\n" +
+          "/voice fx clean|device|radio|hologram|corrupt — efecto de audio\n" +
           "/beats [on|off] — activar o detener los beats\n" +
           "/beats every <min>|random — frecuencia fija o aleatoria\n" +
           "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
@@ -722,10 +722,10 @@ function runAppCommand(raw) {
 
     case "/voice": {
       const value = argument.toLowerCase();
-      const fxMatch = value.match(/^(?:fx|effects?)\s+(clean|device|radio|hologram)$/);
+      const fxMatch = value.match(/^(?:fx|effects?)\s+(clean|device|radio|hologram|corrupt|malvado)$/);
       if (fxMatch) {
         try {
-          const preset = setVoiceEffectsPreset(fxMatch[1]);
+          const preset = setVoiceEffectsPreset(fxMatch[1] === "malvado" ? "corrupt" : fxMatch[1]);
           win?.webContents.send("voice:effects", preset);
           return { ok: true, message: `Efecto de voz: ${preset}.` };
         } catch (error) {
