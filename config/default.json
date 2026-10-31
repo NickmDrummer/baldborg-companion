@@ -22,6 +22,10 @@
       "voice": "em_alex",
       "lang": "es",
       "speed": 1.0
+    },
+    "stt": {
+      "model": "small",
+      "language": "auto"
     }
   },
   "avatar": {

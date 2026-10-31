@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("window:focus", listener);
     return () => ipcRenderer.removeListener("window:focus", listener);
   },
+  onListenState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("listen:state", listener);
+    return () => ipcRenderer.removeListener("listen:state", listener);
+  },
   onBeat: (callback) => {
     const listener = (_event, beat) => callback(beat);
     ipcRenderer.on("beat:event", listener);

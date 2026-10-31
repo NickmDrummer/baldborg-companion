@@ -16,7 +16,16 @@ interface ChatEntry {
 }
 
 interface BrainEvent {
-  type: "chunk" | "done" | "error" | "reset" | "tool" | "discard" | "confirm" | "confirm-cancel";
+  type:
+    | "chunk"
+    | "done"
+    | "error"
+    | "reset"
+    | "tool"
+    | "discard"
+    | "confirm"
+    | "confirm-cancel"
+    | "voice";
   text?: string;
   mood?: Mood;
   message?: string;
@@ -34,6 +43,14 @@ interface BeatEvent {
   text: string;
   mood: Mood;
   speak: boolean;
+  durationMs?: number;
+}
+
+type ListenPhase = "recording" | "transcribing";
+
+interface ListenState {
+  active: boolean;
+  phase?: ListenPhase;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -65,6 +82,7 @@ interface BaldborgApi {
   onWarm: (callback: (active: boolean) => void) => () => void;
   onLocked: (callback: (locked: boolean) => void) => () => void;
   onBeat: (callback: (beat: BeatEvent) => void) => () => void;
+  onListenState: (callback: (state: ListenState) => void) => () => void;
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   onModeChanged: (callback: (mode: Mode) => void) => () => void;
@@ -111,6 +129,7 @@ export default function App() {
   const [locked, setLocked] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<{ id: string; summary: string } | null>(null);
   const [beat, setBeat] = useState<{ text: string; mood: Mood } | null>(null);
+  const [listenPhase, setListenPhase] = useState<ListenPhase | null>(null);
   const beatTimer = useRef<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -197,8 +216,12 @@ export default function App() {
       setBeat({ text: event.text, mood: event.mood });
       if (beatTimer.current) window.clearTimeout(beatTimer.current);
       // Reminders stay a little longer: they matter more than a passing beat.
-      const duration = event.id?.startsWith("reminder-") ? 30_000 : 20_000;
+      const duration = event.durationMs ?? (event.id?.startsWith("reminder-") ? 30_000 : 20_000);
       beatTimer.current = window.setTimeout(() => setBeat(null), duration);
+    });
+
+    const offListen = api?.onListenState((state) => {
+      setListenPhase(state.active ? (state.phase ?? "recording") : null);
     });
 
     const offGlitch = api?.onGlitch(() => requestGlitch());
@@ -228,6 +251,21 @@ export default function App() {
 
       if (event.type === "confirm-cancel") {
         setPendingConfirm(null);
+        return;
+      }
+
+      if (event.type === "voice") {
+        const text = event.text?.trim();
+        if (!text) return;
+        const userId = nextId++;
+        const assistantId = nextId++;
+        streamingId.current = assistantId;
+        setEntries((current) => [
+          ...current,
+          { id: userId, role: "user", text },
+          { id: assistantId, role: "assistant", text: "" },
+        ]);
+        setBusy(true);
         return;
       }
 
@@ -293,6 +331,7 @@ export default function App() {
       offReplay?.();
       offGlitch?.();
       offBeat?.();
+      offListen?.();
       offWindowFocus?.();
       offAccent?.();
       offWarm?.();
@@ -361,7 +400,11 @@ export default function App() {
       </div>
 
       {mode === "passive" ? (
-        beat ? (
+        listenPhase ? (
+          <div className="beat listening">
+            {listenPhase === "recording" ? "ESCUCHANDO…" : "TRANSCRIBIENDO…"}
+          </div>
+        ) : beat ? (
           <div className="beat">{beat.text}</div>
         ) : (
           <div className="statusline">
@@ -377,7 +420,11 @@ export default function App() {
             <span className="grip-title">BALDBORG</span>
             <span className="grip-sep">·</span>
             <span className="grip-state">
-              {muted
+              {listenPhase === "recording"
+                ? "ESCUCHANDO"
+                : listenPhase === "transcribing"
+                  ? "TRANSCRIBIENDO"
+                  : muted
                 ? "VOZ SILENCIADA"
                 : busy
                   ? activeTool
@@ -441,7 +488,15 @@ export default function App() {
               ref={inputRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder={busy ? "El núcleo está respondiendo…" : "Escriba su consulta, señor."}
+              placeholder={
+                listenPhase === "recording"
+                  ? "Escuchando, señor…"
+                  : listenPhase === "transcribing"
+                    ? "Transcribiendo…"
+                    : busy
+                      ? "El núcleo está respondiendo…"
+                      : "Escriba su consulta, señor."
+              }
               spellCheck={false}
               autoComplete="off"
               disabled={busy}

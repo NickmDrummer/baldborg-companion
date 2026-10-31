@@ -9,7 +9,7 @@
  *   bind = SUPER SHIFT, D, exec, /path/to/BaldborgCompanion/bin/baldborg toggle
  *   bind = SUPER SHIFT, M, exec, /path/to/BaldborgCompanion/bin/baldborg mute
  *
- * Commands: toggle | open | close | mute | show | hide | quit
+ * Commands: toggle | open | close | mute | show | hide | quit | listen start|stop
  */
 
 import { connect } from "node:net";
@@ -18,11 +18,29 @@ import { join } from "node:path";
 
 const SOCKET = join(homedir(), ".config", "baldborg", "control.sock");
 const [command, ...rest] = process.argv.slice(2);
-const payload = ["announce", "language"].includes(command)
+const payload = ["announce", "language", "listen"].includes(command)
   ? `${command} ${rest.join(" ").trim()}`
   : command;
 
-const VALID = new Set(["toggle", "open", "close", "mute", "forget", "speak", "glitch", "beat", "theme", "announce", "language", "status", "show", "hide", "quit", "capture"]);
+const VALID = new Set([
+  "toggle",
+  "open",
+  "close",
+  "mute",
+  "forget",
+  "speak",
+  "glitch",
+  "beat",
+  "theme",
+  "announce",
+  "language",
+  "listen",
+  "status",
+  "show",
+  "hide",
+  "quit",
+  "capture",
+]);
 
 if (!command || !VALID.has(command)) {
   console.error(`usage: baldborg <${[...VALID].join("|")}>`);

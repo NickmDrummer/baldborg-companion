@@ -377,7 +377,7 @@ async function chatRound(messages, model, sink) {
  * @param {(event: object) => void} sink receives chunk/tool/confirm/done/error
  * @param {string} [modelOverride]
  */
-export async function startChat(text, sink, modelOverride) {
+export async function startChat(text, sink, modelOverride, languageOverride) {
   if (busy) cancelChat(sink);
   busy = true;
   controller = new AbortController();
@@ -470,7 +470,9 @@ export async function startChat(text, sink, modelOverride) {
 
     // Small models sometimes keep the language of the previous turn. One
     // corrective round is cheap and deterministic.
-    const expected = detectLanguage(text);
+    // Speech recognition reports the spoken language directly, which is more
+    // reliable than a stop-word guess on a short utterance.
+    const expected = languageOverride ?? detectLanguage(text);
     if (detectLanguage(parsed.text) !== expected) {
       console.info(`[baldborg] wrong language, retrying in ${expected}`);
       sink({ type: "discard" });
@@ -495,7 +497,7 @@ export async function startChat(text, sink, modelOverride) {
       /\b(programad[oa]|anotad[oa]|guardad[oa]|scheduled|noted|created|set up)\b/i.test(parsed.text);
     if (reminderIntent && !reminderToolRan && claimsDone) {
       finalText =
-        detectLanguage(text) === "en"
+        expected === "en"
           ? '[[mood:stern]] Nothing was scheduled, sir. I need a concrete time: "in 20 minutes" or "at 18:30".'
           : "[[mood:stern]] No he programado nada, señor. Necesito una hora concreta: «en 20 minutos» o «a las 18:30».";
       parsed = parseMood(finalText);

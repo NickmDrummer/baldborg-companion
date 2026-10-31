@@ -108,6 +108,22 @@ body,
   animation: fade 220ms ease-out both;
 }
 
+.beat.listening {
+  border-color: rgba(255, 138, 128, 0.55);
+  color: #ffd9d4;
+  animation: listen 1.8s ease-in-out infinite;
+}
+
+@keyframes listen {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 138, 128, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 138, 128, 0.28);
+  }
+}
+
 .dot {
   width: 5px;
   height: 5px;

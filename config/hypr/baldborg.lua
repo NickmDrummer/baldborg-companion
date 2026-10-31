@@ -23,12 +23,17 @@ hl.unbind("SUPER + SHIFT + D")
 hl.unbind("SUPER + SHIFT + H")
 hl.unbind("SUPER + SHIFT + M")
 hl.unbind("SUPER + SHIFT + R")
+hl.unbind("SUPER + SHIFT + V")
 
 local baldborg = "__REPO__/bin/baldborg"
 
 o.bind("SUPER + SHIFT + D", "Baldborg: modo interactivo", baldborg .. " toggle")
 o.bind("SUPER + SHIFT + M", "Baldborg: silenciar voz", baldborg .. " mute")
 o.bind("SUPER + SHIFT + R", "Baldborg: repetir voz", baldborg .. " speak")
+
+-- Push-to-talk: record while V is held, transcribe on release.
+o.bind("SUPER + SHIFT + V", "Baldborg: hablar (mantener)", baldborg .. " listen start")
+o.bind("SUPER + SHIFT + V", "Baldborg: hablar (soltar)", baldborg .. " listen stop", { release = true })
 
 -- Start the overlay with the session (single-instance safe).
 o.launch_on_start("__REPO__/bin/baldborg-start")

@@ -22,6 +22,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
 import { forceBeat, noteInteraction, noteLanguage, setLanguage, startBeats, stopBeats } from "./beats.js";
+import {
+  abortListening,
+  isListening,
+  startListening,
+  stopListening,
+  transcribe,
+  warmTranscription,
+} from "./stt.js";
 import { autoSpeakEnabled, detectLanguage, stopVoice, synthesize, voiceStatus } from "./voice.js";
 import { loadUserTools, resumeReminders, setReminderNotifier } from "./tools.js";
 
@@ -537,6 +545,77 @@ function registerHotkeys() {
 
 /* --------------------------------------------------------- control socket -- */
 
+/** Single entry point for typed and spoken messages. */
+function runChat(text, language) {
+  const detected = language ?? detectLanguage(text);
+  noteInteraction();
+  noteLanguage(detected);
+  startChat(
+    text,
+    (event) => {
+      if (event.type === "done" && event.mood) lastMood = event.mood;
+      win?.webContents.send("brain:event", event);
+    },
+    undefined,
+    detected,
+  );
+}
+
+function listenNotice(text) {
+  win?.webContents.send("beat:event", {
+    type: "beat",
+    id: "listen-error",
+    text,
+    mood: "concerned",
+    speak: false,
+    durationMs: 6000,
+  });
+}
+
+let listeningBusy = false;
+
+async function beginListening() {
+  if (!win || isListening() || listeningBusy) return;
+  if (!startListening()) return;
+  win.webContents.send("listen:state", { active: true, phase: "recording" });
+}
+
+async function endListening() {
+  if (!isListening() || listeningBusy) return;
+  listeningBusy = true;
+  win?.webContents.send("listen:state", { active: true, phase: "transcribing" });
+
+  try {
+    const captured = await stopListening();
+    if (!captured) {
+      listenNotice("No he oído nada, señor. El micrófono ha sido más honesto que de costumbre.");
+      return;
+    }
+
+    const result = await transcribe(captured.wav);
+    const text = (result?.text ?? "").replace(/\s+/g, " ").trim();
+    if (!text) {
+      listenNotice("Silencio transcrito, señor. Ni una palabra que pueda usar en su contra.");
+      return;
+    }
+
+    // Talking over an answer: drop the old one before injecting the new
+    // message, or its late "cancelled" event would clear the new placeholder.
+    if (isBusy()) cancelChat();
+
+    // Open the transcript first so the injected message has somewhere to land.
+    await applyMode("interactive");
+    win?.webContents.send("brain:event", { type: "voice", text });
+    runChat(text, result?.language === "en" ? "en" : "es");
+  } catch (error) {
+    console.warn("[baldborg] transcription failed:", error.message);
+    listenNotice("No he podido transcribir el audio, señor. La culpa es del enlace, por supuesto.");
+  } finally {
+    listeningBusy = false;
+    win?.webContents.send("listen:state", { active: false });
+  }
+}
+
 function handleCommand(raw) {
   const [command, ...rest] = raw.trim().split(/\s+/);
   const argument = rest.join(" ").trim();
@@ -566,6 +645,10 @@ function handleCommand(raw) {
       break;
     case "beat":
       forceBeat();
+      break;
+    case "listen":
+      if (argument === "start") void beginListening();
+      else if (argument === "stop") void endListening();
       break;
     case "announce":
       if (argument) {
@@ -640,6 +723,7 @@ function startControlServer() {
             muted: state.muted,
             busy: isBusy(),
             warming,
+            listening: isListening(),
             mood: lastMood,
             accent: state.accent ?? null,
           }) + "\n",
@@ -657,6 +741,7 @@ function startControlServer() {
   server.listen(CONTROL_SOCKET);
 
   app.on("will-quit", () => {
+    abortListening();
     server.close();
     rmSync(CONTROL_SOCKET, { force: true });
   });
@@ -680,12 +765,7 @@ function registerIpc() {
 
   ipcMain.handle("brain:chat", (_event, text) => {
     if (typeof text !== "string" || !text.trim()) return;
-    noteInteraction();
-    noteLanguage(detectLanguage(text));
-    startChat(text.trim(), (event) => {
-      if (event.type === "done" && event.mood) lastMood = event.mood;
-      win?.webContents.send("brain:event", event);
-    });
+    runChat(text.trim());
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
   ipcMain.handle("tools:confirm", (_event, id, accepted) => confirmAction(id, accepted));
@@ -738,12 +818,17 @@ if (!gotLock) {
     setReminderNotifier((event) => win?.webContents.send("beat:event", event));
     resumeReminders();
 
-    // Warm the model and its prompt cache while the overlay boots.
+    // Warm the model and its prompt cache while the overlay boots, then the
+    // speech recogniser, so the first push-to-talk is not slow.
     setTimeout(
       () =>
         void warmup((active) => {
           warming = active;
           win?.webContents.send("brain:warm", active);
+        }).finally(() => {
+          void warmTranscription().catch((error) =>
+            console.info("[baldborg] stt warm-up skipped:", error.message),
+          );
         }),
       2_500,
     );
