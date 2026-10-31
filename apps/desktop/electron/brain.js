@@ -12,7 +12,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
-import { listPendingReminders, prepareTool, toolDefinitions, toolsEnabled } from "./tools.js";
+import {
+  configuredTeam,
+  listPendingReminders,
+  prepareTool,
+  toolDefinitions,
+  toolsEnabled,
+} from "./tools.js";
 import { detectLanguage } from "./voice.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -273,6 +279,35 @@ async function runReminderQuery(route, sink, userText) {
   sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
 }
 
+function needsTeamTool(text) {
+  return /\b(cu[aá]ndo (juega|jugar[aá])|pr[oó]xim[oa] partido|partidos|fixtures?|resultado|marcador|c[oó]mo qued[oó]|when (does|do|is) .* play|next match|last result|score)\b/i.test(
+    text,
+  );
+}
+
+/** True when the question is about the configured team, not another club. */
+function mentionsConfiguredTeam(text) {
+  const words = configuredTeam()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length >= 4);
+  const sample = text.toLowerCase();
+  return words.some((word) => sample.includes(word));
+}
+
+function genericTeamQuestion(text) {
+  return /(mi equipo|nuestro equipo|el equipo|pr[oó]xim[oa] partido|[uú]ltimo partido|my team|next match|last match)/i.test(
+    text,
+  );
+}
+
+/** "el último partido del Real Madrid" must not be answered with Bayern data. */
+function namesAnotherTeam(text) {
+  const match = text.match(/\b(?:de|del|of)\s+([A-ZÀ-Ý][\wÀ-Ý]+(?:\s+[A-ZÀ-Ý][\wÀ-Ý]+)*)/);
+  if (!match) return false;
+  return !mentionsConfiguredTeam(match[1]);
+}
+
 async function runReminderRoute(route, sink, userText) {
   sink({ type: "tool", name: "set_reminder", status: "running" });
 
@@ -387,14 +422,67 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
   let firstToken = null;
 
   const userEntry = { role: "user", content: text };
+  const expectedLanguage = languageOverride ?? detectLanguage(text);
+  const languageInstruction =
+    expectedLanguage === "en"
+      ? "Reply only in English."
+      : "Reply only in Spanish, using formal usted.";
   // Volatile context goes last so Ollama's prompt cache keeps the stable
   // prefix (system prompt + history) between turns.
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history,
     { role: "system", content: clockContext() },
+    { role: "system", content: languageInstruction },
     userEntry,
   ];
+
+  // The model answers football questions from memory too often. For the
+  // configured team we fetch the fixtures first and hand them over as the only
+  // valid source; other clubs still go through the normal tool call.
+  const english = expectedLanguage === "en";
+  if (
+    needsTeamTool(text) &&
+    (mentionsConfiguredTeam(text) || (genericTeamQuestion(text) && !namesAnotherTeam(text)))
+  ) {
+    let fixtures = null;
+    try {
+      const prepared = prepareTool("team_fixtures", {});
+      fixtures = await prepared.run();
+    } catch (error) {
+      console.warn("[baldborg] fixture prefetch failed:", error.message);
+    }
+    console.info(
+      `[baldborg] fixtures prefetch: ${fixtures ? fixtures.team : "failed"}`,
+    );
+
+    messages.push({
+      role: "system",
+      content: fixtures
+        ? english
+          ? `Authoritative team_fixtures result for this turn: ${JSON.stringify(fixtures)}. ` +
+            "Answer only from these data, never from memory. If you mention a time, " +
+            "say it is stadium time."
+          : `Resultado autoritativo de team_fixtures para este turno: ${JSON.stringify(fixtures)}. ` +
+            "Responda solo con estos datos, nunca de memoria. Si menciona una hora, " +
+            "aclare que es la hora del estadio."
+        : english
+          ? "The fixture lookup failed. Say so plainly; do not invent a match or a score."
+          : "La consulta de partidos falló. Dígalo claramente; no invente un partido ni un marcador.",
+    });
+  } else if (needsTeamTool(text)) {
+    // Another club: the model must call the tool with its name.
+    messages.push({
+      role: "system",
+      content: english
+        ? "This is a football question about another club. Call team_fixtures with " +
+          "that club's name before replying. Never answer from memory. Times are " +
+          "stadium time."
+        : "Esta es una pregunta de fútbol sobre otro club. Llame a team_fixtures " +
+          "con el nombre de ese club antes de responder. No responda de memoria. " +
+          "Las horas son la hora del estadio.",
+    });
+  }
 
   let finalText = "";
   let reminderToolRan = false;
@@ -472,7 +560,7 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     // corrective round is cheap and deterministic.
     // Speech recognition reports the spoken language directly, which is more
     // reliable than a stop-word guess on a short utterance.
-    const expected = languageOverride ?? detectLanguage(text);
+    const expected = expectedLanguage;
     if (detectLanguage(parsed.text) !== expected) {
       console.info(`[baldborg] wrong language, retrying in ${expected}`);
       sink({ type: "discard" });

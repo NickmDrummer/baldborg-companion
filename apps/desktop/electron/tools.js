@@ -548,8 +548,18 @@ async function teamFixtures(teamArg) {
       event: event.strEvent,
       league: event.strLeague,
       whenIso: date ? date.toISOString() : null,
+      // TheSportsDB sends stadium-local time without a zone. Formatting it as
+      // UTC keeps the source clock instead of inventing a conversion.
       when: date
-        ? date.toLocaleString("es-MX", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+        ? date.toLocaleString("es-MX", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+            timeZone: "UTC",
+          })
         : event.dateEvent,
       score: event.intHomeScore != null ? `${event.intHomeScore}-${event.intAwayScore}` : null,
     };
@@ -563,10 +573,18 @@ async function teamFixtures(teamArg) {
   }
 
   const parts = [];
-  if (upcoming.length) parts.push(`Próximos partidos: ${upcoming.map((item) => `${item.event} (${item.when})`).join(" · ")}`);
+  if (upcoming.length) {
+    parts.push(
+      `Próximos partidos: ${upcoming
+        .map((item) => `${item.event} (${item.when}, hora del estadio)`)
+        .join(" · ")}`,
+    );
+  }
   if (previous.length) {
     const p = previous[0];
-    parts.push(`Último resultado: ${p.event}${p.score ? ` ${p.score}` : ""} (${p.when})`);
+    parts.push(
+      `Último resultado: ${p.event}${p.score ? ` ${p.score}` : ""} (${p.when}, hora del estadio)`,
+    );
   }
   if (!parts.length) parts.push(`${team.strTeam}: sin partidos próximos ni resultados recientes registrados.`);
 
@@ -693,4 +711,8 @@ export function prepareTool(name, rawArgs) {
 
 export function toolsEnabled() {
   return toolsConfig().enabled;
+}
+
+export function configuredTeam() {
+  return toolsConfig().team.name;
 }

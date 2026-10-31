@@ -50,16 +50,19 @@ function voiceConfig() {
 /** Cheap language guess: enough to pick between the Spanish and English voices. */
 export function detectLanguage(text) {
   const sample = text.toLowerCase();
+  // Accents are strong evidence for Spanish and cheap to check.
+  const accent = /[ñáéíóúü¿¡]/.test(sample) ? 2 : 0;
   const es = (
     sample.match(
-      /\b(el|la|los|las|de|que|y|para|con|su|sus|señor|usted|está|estoy|recomiendo|no|es|una|un|por|del|mi|le|lo)\b/g,
+      /\b(el|la|los|las|un|una|unos|unas|de|del|que|qué|y|o|para|con|sin|su|sus|mi|mis|usted|señor|está|estoy|es|son|por|en|al|lo|le|les|se|no|sí|cómo|cuándo|dónde|quién|cuál|por qué|partido|juega|jugó|quedó|gracias|hola|buenos|días|favor|recordatorio|recuérdame|hora|clima|equipo|ciudad)\b/g,
     ) ?? []
   ).length;
   const en = (
-    sample.match(/\b(the|and|you|your|is|are|to|of|for|with|sir|recommend|not|it|that|this|i)\b/g) ??
-    []
+    sample.match(
+      /\b(the|a|an|and|or|of|to|in|on|at|for|with|without|you|your|is|are|was|were|be|been|do|does|did|can|could|will|would|should|have|has|had|this|that|these|those|it|its|i|my|me|we|our|they|their|he|she|his|her|what|when|where|why|how|which|who|not|no|yes|please|thanks|hello|hi|sir|remind|reminder|weather|time|team|match|play|plays|next|last|score|result|today|tomorrow)\b/g,
+    ) ?? []
   ).length;
-  return es >= en ? "es" : "en";
+  return es + accent >= en ? "es" : "en";
 }
 
 async function isHealthy() {
