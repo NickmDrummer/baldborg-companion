@@ -27,6 +27,17 @@
     "stt": {
       "model": "small",
       "language": "auto"
+    },
+    "provider": "kokoro",
+    "azure": {
+      "es": {
+        "voice": "es-MX-JorgeMultilingualNeural",
+        "lang": "es-MX"
+      },
+      "en": {
+        "voice": "en-US-AndrewMultilingualNeural",
+        "lang": "en-US"
+      }
     }
   },
   "avatar": {
@@ -72,7 +83,7 @@
     "dailyCap": 6,
     "speak": true,
     "language": "es",
-    "everyMinutes": 1,
+    "everyMinutes": 5,
     "generator": "model"
   }
 }

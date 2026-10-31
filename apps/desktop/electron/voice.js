@@ -19,8 +19,13 @@ const HOST = "http://127.0.0.1:8765";
 
 const DEFAULTS = {
   autoSpeak: true,
+  provider: "kokoro",
   es: { voice: "em_alex", lang: "es", speed: 1.0 },
   en: { voice: "bm_lewis", lang: "en-gb", speed: 1.0 },
+  azure: {
+    es: { voice: "es-MX-JorgeMultilingualNeural", lang: "es-MX" },
+    en: { voice: "en-US-AndrewMultilingualNeural", lang: "en-US" },
+  },
 };
 
 const VENV_PYTHON = join(VOICE_DIR, ".venv", "bin", "python");
@@ -37,6 +42,63 @@ let child = null;
 let starting = null;
 let uvIndex = 0;
 let lastError = null;
+
+function azureCredentials() {
+  let file = {};
+  try {
+    file = JSON.parse(readFileSync(join(homedir(), ".config", "baldborg", "voice.json"), "utf8"));
+  } catch {
+    /* no optional cloud credentials */
+  }
+  return {
+    key: process.env.AZURE_SPEECH_KEY ?? file.azureKey ?? null,
+    region: process.env.AZURE_SPEECH_REGION ?? file.azureRegion ?? null,
+  };
+}
+
+function escapeXml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+async function synthesizeAzure(text, lang, config) {
+  const { key, region } = azureCredentials();
+  if (!key || !region) throw new Error("Azure key/region not configured");
+
+  const voice = config.azure?.[lang] ?? config.azure?.es;
+  if (!voice?.voice) throw new Error("Azure voice not configured");
+
+  const ssml =
+    `<speak version="1.0" xml:lang="${voice.lang}">` +
+    `<voice name="${voice.voice}">${escapeXml(text)}</voice></speak>`;
+
+  const response = await fetch(
+    `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`,
+    {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "riff-24khz-16bit-mono-pcm",
+        "User-Agent": "Baldborg",
+      },
+      body: ssml,
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`azure ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length < 100) throw new Error("azure returned empty audio");
+  return { wav: buffer, lang, voice: voice.voice };
+}
 
 function voiceConfig() {
   try {
@@ -161,6 +223,17 @@ export async function synthesize(text) {
   const lang = detectLanguage(text);
   const voice = config[lang] ?? config.es;
 
+  if (config.provider === "azure") {
+    try {
+      const result = await synthesizeAzure(text, lang, config);
+      lastError = null;
+      return result;
+    } catch (error) {
+      lastError = error.message;
+      console.warn("[baldborg] Azure TTS unavailable, using Kokoro:", error.message);
+    }
+  }
+
   try {
     await ensureVoiceReady();
     const response = await fetch(`${HOST}/synth`, {
@@ -190,7 +263,13 @@ export async function synthesize(text) {
 }
 
 export function voiceStatus() {
-  return { ready: Boolean(child), error: lastError };
+  const config = voiceConfig();
+  return {
+    ready: Boolean(child),
+    error: lastError,
+    provider: config.provider ?? "kokoro",
+    azureConfigured: Boolean(azureCredentials().key && azureCredentials().region),
+  };
 }
 
 export function stopVoice() {

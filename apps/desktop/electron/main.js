@@ -21,7 +21,15 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
-import { forceBeat, noteInteraction, noteLanguage, setLanguage, startBeats, stopBeats } from "./beats.js";
+import {
+  beatStatus,
+  forceBeat,
+  noteInteraction,
+  noteLanguage,
+  setLanguage,
+  startBeats,
+  stopBeats,
+} from "./beats.js";
 import {
   parseBeatInterval,
   parseCommand,
@@ -36,6 +44,7 @@ import {
   setBeatsEvery,
   setBeatsLanguage,
   setSilentHours,
+  setVoiceProvider,
 } from "./settings.js";
 import {
   abortListening,
@@ -597,12 +606,17 @@ function runChat(text, language) {
 function configMessage() {
   try {
     const c = configSummary();
+    const b = beatStatus();
+    const cadence = b.everyMinutes > 0 ? `cada ${b.everyMinutes} min` : `${b.minMinutes}-${b.maxMinutes} min`;
+    const silent =
+      b.silentHours[0] === 0 && b.silentHours[1] === 0
+        ? "sin"
+        : `${b.silentHours[0]}-${b.silentHours[1]}`;
     return [
       `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
-      `Voz automática: ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
-      `Beats: ${c.beatsEnabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
-        `${c.beatsGenerator} · ${c.beatsEvery > 0 ? `cada ${c.beatsEvery} min` : `${c.beatsMin}-${c.beatsMax} min`} · ` +
-        `silencio ${c.silentStart === 0 && c.silentEnd === 0 ? "sin" : `${c.silentStart}-${c.silentEnd}`} · tope ${c.dailyCap}`,
+      `Voz: ${c.voiceProvider} · automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
+      `Beats: ${b.enabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
+        `${c.beatsGenerator} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}`,
       `Avatar: ${c.material}`,
       `Equipo: ${c.team}`,
       `Ciudad: ${c.city}`,
@@ -611,6 +625,43 @@ function configMessage() {
   } catch (error) {
     return `No pude leer la configuración: ${error.message}`;
   }
+}
+
+function statusMessage() {
+  const c = configSummary();
+  const b = beatStatus();
+  const cadence = b.everyMinutes > 0 ? `cada ${b.everyMinutes} min` : `${b.minMinutes}-${b.maxMinutes} min`;
+  const silent =
+    b.silentHours[0] === 0 && b.silentHours[1] === 0
+      ? "sin"
+      : `${b.silentHours[0]}-${b.silentHours[1]}`;
+  const next = b.nextInMinutes == null ? "" : ` · próxima en ${b.nextInMinutes} min`;
+  const blocked = b.lastBlocked ? ` · último bloqueo: ${b.lastBlocked.reason}` : "";
+  const hour = new Date().getHours();
+  const silentNow =
+    b.silentHours[0] !== b.silentHours[1] &&
+    (b.silentHours[0] < b.silentHours[1]
+      ? hour >= b.silentHours[0] && hour < b.silentHours[1]
+      : hour >= b.silentHours[0] || hour < b.silentHours[1]);
+  const paused =
+    b.mode === "interactive"
+      ? "chat abierto"
+      : b.muted
+        ? "voz silenciada"
+        : silentNow
+          ? "horas silenciosas"
+          : b.count >= b.dailyCap
+            ? "tope diario"
+            : null;
+  const pause = paused ? ` · en pausa: ${paused}` : "";
+
+  return [
+    `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ` +
+      `${isBusy() ? "ocupado" : "libre"} · micrófono ${isListening() ? "activo" : "inactivo"}`,
+    `Beats: ${b.running ? "activos" : "detenidos"} · ${cadence} · silencio ${silent} · ` +
+      `hoy ${b.count}/${b.dailyCap}${next}${pause}${blocked}`,
+    `Modelo: ${c.model} · voz ${c.voiceProvider} · STT ${c.sttModel}`,
+  ].join("\n");
 }
 
 function runAppCommand(raw) {
@@ -626,6 +677,7 @@ function runAppCommand(raw) {
           "/status — estado del companion y del modelo\n" +
           "/mute [on|off] — silenciar o activar la voz\n" +
           "/voice [on|off] — voz automática persistente\n" +
+          "/voice provider kokoro|azure — proveedor de voz\n" +
           "/beats [on|off] — activar o detener los beats\n" +
           "/beats every <min>|random — frecuencia fija o aleatoria\n" +
           "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
@@ -640,13 +692,8 @@ function runAppCommand(raw) {
     case "/config":
       return { ok: true, message: configMessage() };
 
-    case "/status": {
-      const runtime =
-        `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ` +
-        `${isBusy() ? "ocupado" : "libre"} · beats ${beatsRunning ? "activos" : "detenidos"} · ` +
-        `micrófono ${isListening() ? "activo" : "inactivo"}`;
-      return { ok: true, message: `${runtime}\n${configMessage()}` };
-    }
+    case "/status":
+      return { ok: true, message: statusMessage() };
 
     case "/mute": {
       const next = parseToggle(argument, state.muted);
@@ -660,8 +707,21 @@ function runAppCommand(raw) {
       return { ok: true, message: "Voz activada, señor." };
 
     case "/voice": {
+      const value = argument.toLowerCase();
+      const providerMatch = value.match(/^(?:provider\s+)?(kokoro|azure)$/);
+      if (providerMatch) {
+        try {
+          const provider = setVoiceProvider(providerMatch[1]);
+          return { ok: true, message: `Proveedor de voz: ${provider}.` };
+        } catch (error) {
+          return { ok: false, message: `No pude cambiar el proveedor: ${error.message}` };
+        }
+      }
+
       const next = parseToggle(argument, autoSpeakEnabled());
-      if (next === null) return { ok: false, message: "Uso: /voice [on|off]" };
+      if (next === null) {
+        return { ok: false, message: "Uso: /voice [on|off] · /voice provider kokoro|azure" };
+      }
       setAutoSpeak(next);
       win?.webContents.send("voice:autoSpeak", next);
       return {

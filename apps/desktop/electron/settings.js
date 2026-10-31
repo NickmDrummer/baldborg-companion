@@ -15,6 +15,7 @@ const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 
 export const BEAT_LANGUAGES = new Set(["es", "en", "auto"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
+export const VOICE_PROVIDERS = new Set(["kokoro", "azure"]);
 
 export function readConfig() {
   return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
@@ -43,6 +44,15 @@ export function setBeatsEnabled(value) {
     raw.beats.enabled = Boolean(value);
   });
   return Boolean(value);
+}
+
+export function setVoiceProvider(value) {
+  if (!VOICE_PROVIDERS.has(value)) throw new Error("invalid voice provider");
+  updateConfig((raw) => {
+    raw.voice = raw.voice ?? {};
+    raw.voice.provider = value;
+  });
+  return value;
 }
 
 export function setBeatsEvery(minutes) {
@@ -96,6 +106,7 @@ export function configSummary() {
     context: raw.brain?.numCtx ?? 0,
     temperature: raw.brain?.temperature ?? 0,
     autoSpeak: raw.voice?.autoSpeak !== false,
+    voiceProvider: raw.voice?.provider ?? "kokoro",
     sttModel: raw.voice?.stt?.model ?? "?",
     beatsEnabled: raw.beats?.enabled !== false,
     beatsLanguage: raw.beats?.language ?? "es",

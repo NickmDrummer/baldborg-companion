@@ -45,6 +45,8 @@ function config() {
 
 let state = loadState();
 let timer = null;
+let nextAt = null;
+let lastBlocked = null;
 let startedAt = Date.now();
 let send = () => {};
 let isMuted = () => false;
@@ -222,30 +224,48 @@ function pickBeat(ctx) {
   return eligible[eligible.length - 1];
 }
 
-function gatesPass() {
+function gateReason() {
   const cfg = config();
-  if (!cfg.enabled) return false;
-  if (isMuted()) return false;
-  if (getMode() === "interactive") return false;
+  if (!cfg.enabled) return "beats desactivados";
+  if (isMuted()) return "voz silenciada";
+  if (getMode() === "interactive") return "chat abierto";
 
   const now = new Date();
-  if (inSilentHours(now.getHours(), cfg.silentHours)) return false;
-  if (desktopLocked()) return false;
-  if (fullscreenActive()) return false;
+  if (inSilentHours(now.getHours(), cfg.silentHours)) return "horas silenciosas";
+  if (desktopLocked()) return "sesión bloqueada";
+  if (fullscreenActive()) return "pantalla completa";
 
   const day = todayKey(now);
   if (state.day !== day) {
     state.day = day;
     state.count = 0;
   }
-  if (state.count >= cfg.dailyCap) return false;
-
-  return true;
+  if (state.count >= cfg.dailyCap) return "tope diario";
+  return null;
 }
 
-export function nextIntervalMinutes(cfg = config()) {
-  if (Number(cfg.everyMinutes) > 0) return Math.max(1, Number(cfg.everyMinutes));
-  return cfg.minMinutes + Math.random() * Math.max(1, cfg.maxMinutes - cfg.minMinutes);
+function gatesPass() {
+  return gateReason() === null;
+}
+
+export function beatStatus() {
+  const cfg = config();
+  const minutes = nextAt ? Math.max(0, Math.round((nextAt - Date.now()) / 60_000)) : null;
+  return {
+    running: Boolean(timer),
+    enabled: cfg.enabled,
+    everyMinutes: cfg.everyMinutes ?? 0,
+    minMinutes: cfg.minMinutes,
+    maxMinutes: cfg.maxMinutes,
+    silentHours: cfg.silentHours,
+    dailyCap: cfg.dailyCap,
+    count: state.count,
+    nextAt: nextAt ? new Date(nextAt).toISOString() : null,
+    nextInMinutes: minutes,
+    lastBlocked,
+    mode: getMode(),
+    muted: isMuted(),
+  };
 }
 
 function deliver(text, id, mood, source, count = true) {
@@ -300,16 +320,30 @@ async function fire() {
   return beatFor(ctx, language, false);
 }
 
+export function nextIntervalMinutes(cfg = config()) {
+  if (Number(cfg.everyMinutes) > 0) return Math.max(1, Number(cfg.everyMinutes));
+  return cfg.minMinutes + Math.random() * Math.max(1, cfg.maxMinutes - cfg.minMinutes);
+}
+
 function schedule() {
   if (timer) clearTimeout(timer);
   const cfg = config();
   if (!cfg.enabled) return;
   const minutes = nextIntervalMinutes(cfg);
+  nextAt = Date.now() + minutes * 60_000;
   timer = setTimeout(async () => {
-    try {
-      if (gatesPass()) await fire();
-    } catch (error) {
-      console.warn("[baldborg] beat failed:", error.message);
+    nextAt = null;
+    const reason = gateReason();
+    if (reason) {
+      lastBlocked = { reason, at: Date.now() };
+      console.info(`[baldborg] beat skipped: ${reason}`);
+    } else {
+      lastBlocked = null;
+      try {
+        await fire();
+      } catch (error) {
+        console.warn("[baldborg] beat failed:", error.message);
+      }
     }
     schedule();
   }, minutes * 60_000);
@@ -329,6 +363,7 @@ export function startBeats(options) {
 export function stopBeats() {
   if (timer) clearTimeout(timer);
   timer = null;
+  nextAt = null;
 }
 
 /** Called whenever the client talks to the assistant: postpone the next beat. */
