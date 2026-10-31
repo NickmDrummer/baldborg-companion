@@ -47,7 +47,7 @@
     "window": {
       "passive": {
         "width": 380,
-        "height": 330
+        "height": 460
       },
       "interactive": {
         "width": 380,
@@ -85,8 +85,11 @@
     ],
     "dailyCap": 6,
     "speak": true,
-    "language": "en",
+    "language": "es",
     "everyMinutes": 30,
     "generator": "model"
+  },
+  "ui": {
+    "language": "es"
   }
 }

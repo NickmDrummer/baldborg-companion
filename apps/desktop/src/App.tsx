@@ -4,6 +4,7 @@ import type { HeadMaterial } from "./avatar/bust";
 import type { Mood } from "./avatar/createAvatar";
 import { requestGlitch } from "./avatar/effects";
 import { createSpeaker, type EffectsPreset } from "./voice/speaker";
+import { TOOL_LABELS, ui, type UiLanguage } from "./i18n";
 
 type Mode = "passive" | "interactive";
 type Role = "user" | "assistant" | "error";
@@ -53,20 +54,13 @@ interface ListenState {
   phase?: ListenPhase;
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_weather: "CLIMA",
-  set_reminder: "RECORDATORIO",
-  team_fixtures: "EQUIPO",
-  system_status: "SISTEMA",
-  get_time: "HORA",
-};
-
 interface BaldborgApi {
   getState: () => Promise<{
     mode: Mode;
     muted: boolean;
     autoSpeak?: boolean;
     effects?: EffectsPreset;
+    language?: UiLanguage;
     material?: HeadMaterial;
     accent?: string;
   }>;
@@ -92,6 +86,7 @@ interface BaldborgApi {
   onAutoSpeak: (callback: (value: boolean) => void) => () => void;
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
   onEffects: (callback: (value: EffectsPreset) => void) => () => void;
+  onLanguage: (callback: (value: UiLanguage) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
@@ -135,6 +130,7 @@ export default function App() {
   const [pendingConfirm, setPendingConfirm] = useState<{ id: string; summary: string } | null>(null);
   const [beat, setBeat] = useState<{ text: string; mood: Mood } | null>(null);
   const [listenPhase, setListenPhase] = useState<ListenPhase | null>(null);
+  const [language, setLanguage] = useState<UiLanguage>("es");
   const beatTimer = useRef<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -145,6 +141,11 @@ export default function App() {
   const autoSpeakRef = useRef(true);
   const lastReply = useRef("");
   const modeRef = useRef<Mode>("passive");
+  const t = ui(language);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   const speakText = async (text: string) => {
     if (mutedRef.current || !text) return;
@@ -173,6 +174,7 @@ export default function App() {
       setMode(state.mode);
       setMuted(state.muted);
       autoSpeakRef.current = state.autoSpeak ?? true;
+      if (state.language) setLanguage(state.language);
       if (state.effects) speaker.current?.setEffects(state.effects);
       if (state.material) setMaterial(state.material);
       if (state.accent) applyAccent(state.accent);
@@ -202,6 +204,7 @@ export default function App() {
     });
     const offMaterial = api?.onMaterial((value) => setMaterial(value));
     const offEffects = api?.onEffects((value) => speaker.current?.setEffects(value));
+    const offLanguage = api?.onLanguage((value) => setLanguage(value));
 
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
@@ -342,6 +345,7 @@ export default function App() {
       offAutoSpeak?.();
       offMaterial?.();
       offEffects?.();
+      offLanguage?.();
       offReplay?.();
       offGlitch?.();
       offBeat?.();
@@ -440,7 +444,7 @@ export default function App() {
       {mode === "passive" ? (
         listenPhase ? (
           <div className="beat listening">
-            {listenPhase === "recording" ? "ESCUCHANDO…" : "TRANSCRIBIENDO…"}
+            {listenPhase === "recording" ? t.listening : t.transcribing}
           </div>
         ) : beat ? (
           <div className="beat">{beat.text}</div>
@@ -448,7 +452,7 @@ export default function App() {
           <div className="statusline">
             <span className="dot" />
             BALDBORG ·{" "}
-            {muted ? "SILENCIADO" : busy ? "PROCESANDO" : warming ? "CALENTANDO" : "EN ESPERA"}
+            {muted ? t.muted : busy ? t.processing : warming ? t.warming : t.idle}
           </div>
         )
       ) : (
@@ -463,14 +467,14 @@ export default function App() {
                 : listenPhase === "transcribing"
                   ? "TRANSCRIBIENDO"
                   : muted
-                ? "VOZ SILENCIADA"
+                ? t.voiceMuted
                 : busy
                   ? activeTool
-                    ? `CONSULTANDO ${TOOL_LABELS[activeTool] ?? activeTool.toUpperCase()}`
-                    : "PROCESANDO"
+                    ? t.consulting(TOOL_LABELS[language][activeTool] ?? activeTool.toUpperCase())
+                    : t.processing
                   : warming
-                    ? "CALENTANDO"
-                    : "ENLACE ABIERTO"}
+                    ? t.warming
+                    : t.linkOpen}
             </span>
             <span className="hint">Esc</span>
           </div>
@@ -478,7 +482,7 @@ export default function App() {
           <div className="transcript" ref={transcriptRef}>
             {entries.length === 0 && (
               <p className="entry hint-line">
-                Sistema en línea. Escriba su consulta y el núcleo responderá.
+                {t.empty}
               </p>
             )}
             {entries.map((entry) => (
@@ -505,7 +509,7 @@ export default function App() {
                   setPendingConfirm(null);
                 }}
               >
-                Confirmar
+                {t.confirm}
               </button>
               <button
                 type="button"
@@ -515,7 +519,7 @@ export default function App() {
                   setPendingConfirm(null);
                 }}
               >
-                Cancelar
+                {t.cancel}
               </button>
             </div>
           )}
@@ -528,12 +532,12 @@ export default function App() {
               onChange={(event) => setDraft(event.target.value)}
               placeholder={
                 listenPhase === "recording"
-                  ? "Escuchando, señor…"
+                  ? t.placeholderListening
                   : listenPhase === "transcribing"
-                    ? "Transcribiendo…"
+                    ? t.placeholderTranscribing
                     : busy
-                      ? "El núcleo está respondiendo…"
-                      : "Escriba su consulta o /help, señor."
+                      ? t.placeholderBusy
+                      : t.placeholder
               }
               spellCheck={false}
               autoComplete="off"

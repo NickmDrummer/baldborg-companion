@@ -126,7 +126,7 @@ function nextReminder() {
     if (!upcoming.length) return null;
     return {
       time: new Date(upcoming[0].when).toLocaleTimeString(
-        state.lastLanguage === "en" ? "en-US" : "es-MX",
+        resolveLanguage() === "en" ? "en-US" : "es-MX",
         { hour: "2-digit", minute: "2-digit", hour12: false },
       ),
       text: upcoming[0].text,
@@ -137,10 +137,9 @@ function nextReminder() {
   }
 }
 
-/** Resolved beat language: explicit setting, "auto" follows the last message. */
+/** Manual language: UI and beats share `ui.language`. */
 export function resolveLanguage() {
-  const setting = state.beatLanguage ?? config().language ?? "es";
-  if (setting === "auto") return state.lastLanguage === "en" ? "en" : "es";
+  const setting = config().language ?? "es";
   return setting === "en" ? "en" : "es";
 }
 

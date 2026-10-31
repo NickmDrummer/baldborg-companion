@@ -13,7 +13,7 @@
 
 import "./migrate.js";
 
-import { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -26,7 +26,6 @@ import {
   forceBeat,
   noteInteraction,
   noteLanguage,
-  setLanguage,
   startBeats,
   stopBeats,
 } from "./beats.js";
@@ -52,8 +51,8 @@ import {
   setAzureVoice,
   setBeatsEnabled,
   setBeatsEvery,
-  setBeatsLanguage,
   setSilentHours,
+  setUiLanguage,
   setVoiceEffectsPreset,
   setVoiceProvider,
 } from "./settings.js";
@@ -141,8 +140,8 @@ function avatarMaterial() {
 }
 
 const SIZES = {
-  // Keep the same width in both modes: idle -> chat only grows downwards.
-  passive: { width: 380, height: 330 },
+  // Fixed frame: the chat appears inside the same 380x460 surface.
+  passive: { width: 380, height: 460 },
   interactive: { width: 380, height: 460 },
 };
 /** Gap between the overlay and the monitor edge, in px. */
@@ -158,9 +157,6 @@ const DEFAULT_STATE = {
 
 /** @type {BrowserWindow | null} */
 let win = null;
-/** @type {Tray | null} */
-let tray = null;
-
 let state = loadState();
 let mode = "passive";
 let lastMood = "neutral";
@@ -386,6 +382,15 @@ async function applyWindowGeometry(next, monitorOverride = null) {
   );
 }
 
+/** On restart the overlay starts on workspace 1 of the primary output. */
+async function resetToDefaultWorkspace() {
+  if (!win) return;
+  await hyprDispatch(`hl.dsp.window.move({ workspace = "1", window = "class:${WM_CLASS}" })`);
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+  if (monitor) await applyWindowGeometry("passive", monitor);
+}
+
 let beatsRunning = false;
 
 function startBeatScheduler() {
@@ -440,6 +445,7 @@ function createWindow() {
 
     // The compositor owns placement; nudge it if the rule did not take.
     for (const delay of [500, 1500, 3000]) setTimeout(ensurePlacement, delay);
+    setTimeout(() => void resetToDefaultWorkspace(), 700);
   });
 
   // Keep the chat input focused whenever the compositor focuses the window.
@@ -512,62 +518,19 @@ async function applyMode(next) {
     win.webContents.send("window:focus");
   }
 
-  updateTrayMenu();
   // Resize/position first, then let the renderer swap the layout.
   await applyWindowGeometry(mode, monitor);
   win.webContents.send("mode:changed", mode);
 }
 
 function toggleMode() {
+  if (win && !win.isVisible()) win.showInactive();
   applyMode(mode === "passive" ? "interactive" : "passive");
 }
 
 function setMuted(muted) {
   saveState({ muted });
   win?.webContents.send("audio:muted", muted);
-  updateTrayMenu();
-}
-
-/* ------------------------------------------------------------------ tray -- */
-
-function createTray() {
-  try {
-    const icon = nativeImage.createFromPath(join(__dirname, "tray.png"));
-    tray = new Tray(icon);
-    tray.setToolTip("Baldborg");
-    tray.on("click", toggleMode);
-    updateTrayMenu();
-  } catch (error) {
-    console.warn("[baldborg] tray unavailable:", error.message);
-    tray = null;
-  }
-}
-
-function updateTrayMenu() {
-  if (!tray) return;
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: mode === "passive" ? "Modo interactivo" : "Modo pasivo",
-        accelerator: "Super+Alt+D",
-        click: toggleMode,
-      },
-      {
-        label: state.muted ? "Activar voz" : "Silenciar",
-        accelerator: "Super+Alt+M",
-        click: () => setMuted(!state.muted),
-      },
-      {
-        label: "Olvidar conversación",
-        click: () => {
-          resetHistory();
-          win?.webContents.send("brain:event", { type: "reset" });
-        },
-      },
-      { type: "separator" },
-      { label: "Salir", click: () => app.quit() },
-    ]),
-  );
 }
 
 /* --------------------------------------------------------------- hotkeys -- */
@@ -606,38 +569,60 @@ function configMessage() {
   try {
     const c = configSummary();
     const b = beatStatus();
-    const cadence = b.everyMinutes > 0 ? `cada ${b.everyMinutes} min` : `${b.minMinutes}-${b.maxMinutes} min`;
+    const en = interfaceLanguage() === "en";
+    const cadence =
+      b.everyMinutes > 0
+        ? en ? `every ${b.everyMinutes} min` : `cada ${b.everyMinutes} min`
+        : `${b.minMinutes}-${b.maxMinutes} min`;
     const silent =
       b.silentHours[0] === 0 && b.silentHours[1] === 0
-        ? "sin"
+        ? en ? "none" : "sin"
         : `${b.silentHours[0]}-${b.silentHours[1]}`;
     return [
-      `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
-      `Voz: ${c.voiceProvider} · es ${c.voiceEs} · en ${c.voiceEn} · FX ${c.voiceEffects} · ` +
-        `automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
-      `Beats: ${b.enabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
-        `${c.beatsGenerator} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}`,
-      `Avatar: ${c.material}`,
-      `Equipo: ${c.team}`,
-      `Ciudad: ${c.city}`,
-      `Herramientas: ${c.toolsEnabled ? "activas" : "desactivadas"}`,
-      `Memoria: ${memoryCount()} hecho${memoryCount() === 1 ? "" : "s"}`,
+      en
+        ? `Model: ${c.model} · context ${c.context} · temperature ${c.temperature}`
+        : `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
+      en
+        ? `Voice: ${c.voiceProvider} · es ${c.voiceEs} · en ${c.voiceEn} · FX ${c.voiceEffects} · auto ${c.autoSpeak ? "yes" : "no"} · STT ${c.sttModel}`
+        : `Voz: ${c.voiceProvider} · es ${c.voiceEs} · en ${c.voiceEn} · FX ${c.voiceEffects} · automática ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
+      en
+        ? `Beats: ${b.enabled ? "active" : "stopped"} · ${c.beatsLanguage} · ${c.beatsGenerator} · ${cadence} · silent ${silent} · today ${b.count}/${b.dailyCap}`
+        : `Beats: ${b.enabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ${c.beatsGenerator} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}`,
+      en ? `Avatar: ${c.material}` : `Avatar: ${c.material}`,
+      en ? `Team: ${c.team}` : `Equipo: ${c.team}`,
+      en ? `City: ${c.city}` : `Ciudad: ${c.city}`,
+      en
+        ? `Tools: ${c.toolsEnabled ? "enabled" : "disabled"}`
+        : `Herramientas: ${c.toolsEnabled ? "activas" : "desactivadas"}`,
+      en
+        ? `Memory: ${memoryCount()} fact${memoryCount() === 1 ? "" : "s"}`
+        : `Memoria: ${memoryCount()} hecho${memoryCount() === 1 ? "" : "s"}`,
     ].join("\n");
   } catch (error) {
-    return `No pude leer la configuración: ${error.message}`;
+    return interfaceLanguage() === "en"
+      ? `Could not read the configuration: ${error.message}`
+      : `No pude leer la configuración: ${error.message}`;
   }
 }
 
 function statusMessage() {
   const c = configSummary();
   const b = beatStatus();
-  const cadence = b.everyMinutes > 0 ? `cada ${b.everyMinutes} min` : `${b.minMinutes}-${b.maxMinutes} min`;
+  const en = interfaceLanguage() === "en";
+  const cadence =
+    b.everyMinutes > 0
+      ? en ? `every ${b.everyMinutes} min` : `cada ${b.everyMinutes} min`
+      : `${b.minMinutes}-${b.maxMinutes} min`;
   const silent =
     b.silentHours[0] === 0 && b.silentHours[1] === 0
-      ? "sin"
+      ? en ? "none" : "sin"
       : `${b.silentHours[0]}-${b.silentHours[1]}`;
-  const next = b.nextInMinutes == null ? "" : ` · próxima en ${b.nextInMinutes} min`;
-  const blocked = b.lastBlocked ? ` · último bloqueo: ${b.lastBlocked.reason}` : "";
+  const next = b.nextInMinutes == null ? "" : en ? ` · next in ${b.nextInMinutes} min` : ` · próxima en ${b.nextInMinutes} min`;
+  const blocked = b.lastBlocked
+    ? en
+      ? ` · last block: ${localizeBlockReason(b.lastBlocked.reason, true)}`
+      : ` · último bloqueo: ${b.lastBlocked.reason}`
+    : "";
   const hour = new Date().getHours();
   const silentNow =
     b.silentHours[0] !== b.silentHours[1] &&
@@ -646,54 +631,107 @@ function statusMessage() {
       : hour >= b.silentHours[0] || hour < b.silentHours[1]);
   const paused =
     b.mode === "interactive"
-      ? "chat abierto"
+      ? en ? "chat open" : "chat abierto"
       : b.muted
-        ? "voz silenciada"
+        ? en ? "voice muted" : "voz silenciada"
         : silentNow
-          ? "horas silenciosas"
+          ? en ? "silent hours" : "horas silenciosas"
           : b.count >= b.dailyCap
-            ? "tope diario"
+            ? en ? "daily cap" : "tope diario"
             : null;
-  const pause = paused ? ` · en pausa: ${paused}` : "";
+  const pause = paused ? (en ? ` · paused: ${paused}` : ` · en pausa: ${paused}`) : "";
 
   return [
-    `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ` +
-      `${isBusy() ? "ocupado" : "libre"} · micrófono ${isListening() ? "activo" : "inactivo"}`,
-    `Beats: ${b.running ? "activos" : "detenidos"} · ${cadence} · silencio ${silent} · ` +
-      `hoy ${b.count}/${b.dailyCap}${next}${pause}${blocked}`,
-    `Modelo: ${c.model} · voz ${c.voiceProvider} · STT ${c.sttModel}`,
+    en
+      ? `Mode: ${mode} · ${state.muted ? "muted" : "voice active"} · ${isBusy() ? "busy" : "free"} · microphone ${isListening() ? "active" : "inactive"}`
+      : `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ${isBusy() ? "ocupado" : "libre"} · micrófono ${isListening() ? "activo" : "inactivo"}`,
+    en
+      ? `Beats: ${b.running ? "active" : "stopped"} · ${cadence} · silent ${silent} · today ${b.count}/${b.dailyCap}${next}${pause}${blocked}`
+      : `Beats: ${b.running ? "activos" : "detenidos"} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}${next}${pause}${blocked}`,
+    en
+      ? `Model: ${c.model} · voice ${c.voiceProvider} · STT ${c.sttModel}`
+      : `Modelo: ${c.model} · voz ${c.voiceProvider} · STT ${c.sttModel}`,
   ].join("\n");
+}
+
+function localizeBlockReason(reason, english) {
+  if (!english) return reason;
+  return (
+    {
+      "beats desactivados": "beats disabled",
+      "voz silenciada": "voice muted",
+      "chat abierto": "chat open",
+      "horas silenciosas": "silent hours",
+      "sesión bloqueada": "session locked",
+      "pantalla completa": "fullscreen",
+      "tope diario": "daily cap",
+    }[reason] ?? reason
+  );
+}
+
+function interfaceLanguage() {
+  try {
+    return configSummary().uiLanguage === "en" ? "en" : "es";
+  } catch {
+    return "es";
+  }
 }
 
 function runAppCommand(raw) {
   const { command, argument } = parseCommand(raw);
+  const en = interfaceLanguage() === "en";
 
   switch (command) {
     case "/help":
       return {
         ok: true,
-        message:
-          "Comandos:\n" +
-          "/config — ver todos los ajustes\n" +
-          "/status — estado del companion y del modelo\n" +
-          "/mute [on|off] — silenciar o activar la voz\n" +
-          "/voice [on|off] — voz automática persistente\n" +
-          "/voice provider kokoro|azure — proveedor de voz\n" +
-          "/voice fx clean|device|radio|hologram|corrupt — efecto de audio\n" +
-          "/voice es|en <alias> — voz de Azure por idioma\n" +
-          "/voice list — voces disponibles\n" +
-          "/beats [on|off] — activar o detener los beats\n" +
-          "/beats every <min>|random — frecuencia fija o aleatoria\n" +
-          "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
-          "/avatar normal|hologram — material del avatar\n" +
-          "/language es|en|auto — idioma de los beats\n" +
-          "/club <equipo> — cambiar el equipo favorito\n" +
-          "/city <ciudad> — cambiar la ciudad del clima\n" +
-          "/remember clave = valor — guardar un hecho\n" +
-          "/memory — ver la memoria de largo plazo\n" +
-          "/forget-fact clave — borrar un hecho\n" +
-          "/clean-history — borrar la memoria de la conversación\n" +
-          "/help — esta lista",
+        message: en
+          ? [
+              "Commands:",
+              "/config — show every setting",
+              "/status — companion and model status",
+              "/mute [on|off] — mute or enable the voice",
+              "/voice [on|off] — persistent automatic speech",
+              "/voice provider kokoro|azure — TTS provider",
+              "/voice fx clean|radio|corrupt — audio effect",
+              "/voice es|en <alias> — Azure voice per language",
+              "/voice list — available voices",
+              "/beats [on|off] — start or stop beats",
+              "/beats every <min>|random — fixed or random cadence",
+              "/beats silent <start>-<end>|off — silent window",
+              "/avatar normal|hologram — avatar material",
+              "/language es|en — UI and beat language",
+              "/club <team> — favourite football team",
+              "/city <city> — default weather city",
+              "/remember key = value — store a fact",
+              "/memory — long-term memory",
+              "/forget-fact key — delete a fact",
+              "/clean-history — wipe the conversation",
+              "/help — this list",
+            ].join("\n")
+          : [
+              "Comandos:",
+              "/config — ver todos los ajustes",
+              "/status — estado del companion y del modelo",
+              "/mute [on|off] — silenciar o activar la voz",
+              "/voice [on|off] — voz automática persistente",
+              "/voice provider kokoro|azure — proveedor de voz",
+              "/voice fx clean|radio|corrupt — efecto de audio",
+              "/voice es|en <alias> — voz de Azure por idioma",
+              "/voice list — voces disponibles",
+              "/beats [on|off] — activar o detener los beats",
+              "/beats every <min>|random — frecuencia fija o aleatoria",
+              "/beats silent <inicio>-<fin>|off — horas sin beats",
+              "/avatar normal|hologram — material del avatar",
+              "/language es|en — idioma de la UI y los beats",
+              "/club <equipo> — cambiar el equipo favorito",
+              "/city <ciudad> — cambiar la ciudad del clima",
+              "/remember clave = valor — guardar un hecho",
+              "/memory — ver la memoria de largo plazo",
+              "/forget-fact clave — borrar un hecho",
+              "/clean-history — borrar la memoria de la conversación",
+              "/help — esta lista",
+            ].join("\n"),
       };
 
     case "/config":
@@ -704,34 +742,38 @@ function runAppCommand(raw) {
 
     case "/mute": {
       const next = parseToggle(argument, state.muted);
-      if (next === null) return { ok: false, message: "Uso: /mute [on|off]" };
+      if (next === null) return { ok: false, message: en ? "Usage: /mute [on|off]" : "Uso: /mute [on|off]" };
       setMuted(next);
-      return { ok: true, message: next ? "Voz silenciada, señor." : "Voz activada, señor." };
+      return {
+        ok: true,
+        message: en
+          ? next ? "Voice muted, sir." : "Voice enabled, sir."
+          : next ? "Voz silenciada, señor." : "Voz activada, señor.",
+      };
     }
 
     case "/unmute":
       setMuted(false);
-      return { ok: true, message: "Voz activada, señor." };
+      return { ok: true, message: en ? "Voice enabled, sir." : "Voz activada, señor." };
 
     case "/voice": {
       const value = argument.toLowerCase();
-      const fxMatch = value.match(/^(?:fx|effects?)\s+(clean|device|radio|hologram|corrupt|malvado)$/);
+      const fxMatch = value.match(/^(?:fx|effects?)\s+(clean|radio|corrupt|malvado)$/);
       if (fxMatch) {
         try {
           const preset = setVoiceEffectsPreset(fxMatch[1] === "malvado" ? "corrupt" : fxMatch[1]);
           win?.webContents.send("voice:effects", preset);
-          return { ok: true, message: `Efecto de voz: ${preset}.` };
+          return { ok: true, message: en ? `Voice effect: ${preset}.` : `Efecto de voz: ${preset}.` };
         } catch (error) {
-          return { ok: false, message: `No pude cambiar el efecto: ${error.message}` };
+          return { ok: false, message: en ? `Could not change the effect: ${error.message}` : `No pude cambiar el efecto: ${error.message}` };
         }
       }
 
       if (value === "list" || value === "voices") {
-        const lines = [
-          `Español: ${Object.keys(AZURE_VOICES.es).join(", ")}`,
-          `Inglés: ${Object.keys(AZURE_VOICES.en).join(", ")}`,
-        ];
-        return { ok: true, message: `Voces de Azure:\n${lines.join("\n")}` };
+        const lines = en
+          ? [`Spanish: ${Object.keys(AZURE_VOICES.es).join(", ")}`, `English: ${Object.keys(AZURE_VOICES.en).join(", ")}`]
+          : [`Español: ${Object.keys(AZURE_VOICES.es).join(", ")}`, `Inglés: ${Object.keys(AZURE_VOICES.en).join(", ")}`];
+        return { ok: true, message: en ? `Azure voices:\n${lines.join("\n")}` : `Voces de Azure:\n${lines.join("\n")}` };
       }
 
       const voiceMatch = value.match(/^(es|en)\s+([a-z]+)$/);
@@ -740,10 +782,10 @@ function runAppCommand(raw) {
           const chosen = setAzureVoice(voiceMatch[1], voiceMatch[2]);
           return {
             ok: true,
-            message: `Voz ${chosen.lang}: ${chosen.voice}.`,
+            message: en ? `Voice ${chosen.lang}: ${chosen.voice}.` : `Voz ${chosen.lang}: ${chosen.voice}.`,
           };
         } catch (error) {
-          return { ok: false, message: `No pude cambiar la voz: ${error.message}` };
+          return { ok: false, message: en ? `Could not change the voice: ${error.message}` : `No pude cambiar la voz: ${error.message}` };
         }
       }
 
@@ -751,36 +793,47 @@ function runAppCommand(raw) {
       if (providerMatch) {
         try {
           const provider = setVoiceProvider(providerMatch[1]);
-          return { ok: true, message: `Proveedor de voz: ${provider}.` };
+          return { ok: true, message: en ? `Voice provider: ${provider}.` : `Proveedor de voz: ${provider}.` };
         } catch (error) {
-          return { ok: false, message: `No pude cambiar el proveedor: ${error.message}` };
+          return { ok: false, message: en ? `Could not change the provider: ${error.message}` : `No pude cambiar el proveedor: ${error.message}` };
         }
       }
 
       const next = parseToggle(argument, autoSpeakEnabled());
       if (next === null) {
-        return { ok: false, message: "Uso: /voice [on|off] · /voice provider kokoro|azure" };
+        return {
+          ok: false,
+          message: en
+            ? "Usage: /voice [on|off] · /voice provider kokoro|azure"
+            : "Uso: /voice [on|off] · /voice provider kokoro|azure",
+        };
       }
       setAutoSpeak(next);
       win?.webContents.send("voice:autoSpeak", next);
       return {
         ok: true,
-        message: next ? "Voz automática activada." : "Voz automática desactivada.",
+        message: en
+          ? next ? "Automatic speech enabled." : "Automatic speech disabled."
+          : next ? "Voz automática activada." : "Voz automática desactivada.",
       };
     }
 
     case "/beats": {
       if (/^silent(\s|$)/i.test(argument)) {
         const silent = parseSilentHours(argument.replace(/^silent\s*/i, ""));
-        if (!silent) return { ok: false, message: "Uso: /beats silent 23-8 | /beats silent off" };
+        if (!silent) {
+          return { ok: false, message: en ? "Usage: /beats silent 23-8 | /beats silent off" : "Uso: /beats silent 23-8 | /beats silent off" };
+        }
         setSilentHours(silent.start, silent.end);
         if (beatsRunning) startBeatScheduler();
         return {
           ok: true,
           message:
             silent.start === 0 && silent.end === 0
-              ? "Horas silenciosas desactivadas."
-              : `Horas silenciosas: ${silent.start}:00-${silent.end}:00.`,
+              ? en ? "Silent hours disabled." : "Horas silenciosas desactivadas."
+              : en
+                ? `Silent hours: ${silent.start}:00-${silent.end}:00.`
+                : `Horas silenciosas: ${silent.start}:00-${silent.end}:00.`,
         };
       }
 
@@ -792,14 +845,21 @@ function runAppCommand(raw) {
         return {
           ok: true,
           message: cadence.random
-            ? "Beats en intervalo aleatorio."
-            : `Beats cada ${minutes} minuto${minutes === 1 ? "" : "s"}.`,
+            ? en ? "Beats on a random interval." : "Beats en intervalo aleatorio."
+            : en
+              ? `Beats every ${minutes} minute${minutes === 1 ? "" : "s"}.`
+              : `Beats cada ${minutes} minuto${minutes === 1 ? "" : "s"}.`,
         };
       }
 
       const next = parseToggle(argument, beatsRunning);
       if (next === null) {
-        return { ok: false, message: "Uso: /beats [on|off] · /beats every <min> · /beats random" };
+        return {
+          ok: false,
+          message: en
+            ? "Usage: /beats [on|off] · /beats every <min> · /beats random"
+            : "Uso: /beats [on|off] · /beats every <min> · /beats random",
+        };
       }
       setBeatsEnabled(next);
       if (next && !beatsRunning) startBeatScheduler();
@@ -807,31 +867,42 @@ function runAppCommand(raw) {
         stopBeats();
         beatsRunning = false;
       }
-      return { ok: true, message: next ? "Beats activados." : "Beats detenidos." };
+      return {
+        ok: true,
+        message: en
+          ? next ? "Beats enabled." : "Beats stopped."
+          : next ? "Beats activados." : "Beats detenidos.",
+      };
     }
 
     case "/avatar": {
       const value = argument.toLowerCase();
-      if (!value) return { ok: false, message: "Uso: /avatar normal|hologram" };
+      if (!value) return { ok: false, message: en ? "Usage: /avatar normal|hologram" : "Uso: /avatar normal|hologram" };
       try {
         setAvatarMaterial(value);
         win?.webContents.send("avatar:material", value);
-        return { ok: true, message: `Material del avatar: ${value}.` };
+        return { ok: true, message: en ? `Avatar material: ${value}.` : `Material del avatar: ${value}.` };
       } catch (error) {
-        return { ok: false, message: `Uso: /avatar normal|hologram (${error.message})` };
+        return {
+          ok: false,
+          message: en
+            ? `Usage: /avatar normal|hologram (${error.message})`
+            : `Uso: /avatar normal|hologram (${error.message})`,
+        };
       }
     }
 
     case "/language": {
       const value = argument.toLowerCase();
-      if (!value) return { ok: false, message: "Uso: /language es|en|auto" };
-      try {
-        setBeatsLanguage(value);
-        setLanguage(value);
-        return { ok: true, message: `Idioma de los beats: ${value}.` };
-      } catch (error) {
-        return { ok: false, message: `Uso: /language es|en|auto (${error.message})` };
+      if (!["es", "en"].includes(value)) {
+        return { ok: false, message: en ? "Usage: /language es|en" : "Uso: /language es|en" };
       }
+      const language = setUiLanguage(value);
+      win?.webContents.send("language:changed", language);
+      return {
+        ok: true,
+        message: language === "en" ? "Interface and beats language: English." : "Idioma de la interfaz y los beats: español.",
+      };
     }
 
     case "/clean-history":
@@ -842,17 +913,26 @@ function runAppCommand(raw) {
       return {
         ok: true,
         reset: true,
-        message: "Memoria borrada. Empezamos de nuevo, sin testigos.",
+        message: en
+          ? "Memory wiped. We start again, without witnesses."
+          : "Memoria borrada. Empezamos de nuevo, sin testigos.",
       };
 
     case "/remember": {
       const parsed = parseFact(argument);
-      if (parsed.error) return { ok: false, message: parsed.error };
+      if (parsed.error) {
+        const message = en
+          ? parsed.error.includes("Uso")
+            ? "Usage: /remember key = value"
+            : "I cannot store that value."
+          : parsed.error;
+        return { ok: false, message };
+      }
       try {
         const fact = rememberFact(parsed.key, parsed.value);
-        return { ok: true, message: `Recordado: ${fact.key} = ${fact.value}.` };
+        return { ok: true, message: en ? `Remembered: ${fact.key} = ${fact.value}.` : `Recordado: ${fact.key} = ${fact.value}.` };
       } catch (error) {
-        return { ok: false, message: `No pude guardarlo: ${error.message}` };
+        return { ok: false, message: en ? `Could not store it: ${error.message}` : `No pude guardarlo: ${error.message}` };
       }
     }
 
@@ -861,49 +941,54 @@ function runAppCommand(raw) {
       if (!facts.length) {
         return {
           ok: true,
-          message: "Mi memoria está vacía. Use /remember clave = valor.",
+          message: en
+            ? "My memory is empty. Use /remember key = value."
+            : "Mi memoria está vacía. Use /remember clave = valor.",
         };
       }
       return {
         ok: true,
         message:
-          `Memoria (${facts.length}):\n` +
-          facts.map((fact) => `· ${fact.key}: ${fact.value}`).join("\n"),
+          en
+            ? `Memory (${facts.length}):\n${facts.map((fact) => `· ${fact.key}: ${fact.value}`).join("\n")}`
+            : `Memoria (${facts.length}):\n${facts.map((fact) => `· ${fact.key}: ${fact.value}`).join("\n")}`,
       };
     }
 
     case "/forget-fact": {
       const key = normaliseKey(argument);
-      if (!key) return { ok: false, message: "Uso: /forget-fact <clave>" };
+      if (!key) return { ok: false, message: en ? "Usage: /forget-fact <key>" : "Uso: /forget-fact <clave>" };
       return forgetFact(key)
-        ? { ok: true, message: `Olvidado: ${key}.` }
-        : { ok: false, message: `No tengo ningún hecho con la clave ${key}.` };
+        ? { ok: true, message: en ? `Forgotten: ${key}.` : `Olvidado: ${key}.` }
+        : { ok: false, message: en ? `I have no fact with key ${key}.` : `No tengo ningún hecho con la clave ${key}.` };
     }
 
     case "/club": {
-      if (!argument) return { ok: false, message: "Uso: /club <equipo>" };
+      if (!argument) return { ok: false, message: en ? "Usage: /club <team>" : "Uso: /club <equipo>" };
       try {
         const team = setFavouriteTeam(argument);
-        return { ok: true, message: `Club favorito: ${team}.` };
+        return { ok: true, message: en ? `Favourite team: ${team}.` : `Club favorito: ${team}.` };
       } catch (error) {
-        return { ok: false, message: `No pude guardar el club: ${error.message}` };
+        return { ok: false, message: en ? `Could not save the team: ${error.message}` : `No pude guardar el club: ${error.message}` };
       }
     }
 
     case "/city": {
-      if (!argument) return { ok: false, message: "Uso: /city <ciudad>" };
+      if (!argument) return { ok: false, message: en ? "Usage: /city <city>" : "Uso: /city <ciudad>" };
       try {
         const city = setDefaultCity(argument);
-        return { ok: true, message: `Ciudad por defecto: ${city}.` };
+        return { ok: true, message: en ? `Default city: ${city}.` : `Ciudad por defecto: ${city}.` };
       } catch (error) {
-        return { ok: false, message: `No pude guardar la ciudad: ${error.message}` };
+        return { ok: false, message: en ? `Could not save the city: ${error.message}` : `No pude guardar la ciudad: ${error.message}` };
       }
     }
 
     default:
       return {
         ok: false,
-        message: `Comando desconocido: ${command || "(vacío)"}. Escriba /help para ver la lista.`,
+        message: en
+          ? `Unknown command: ${command || "(empty)"}. Type /help for the list.`
+          : `Comando desconocido: ${command || "(vacío)"}. Escriba /help para ver la lista.`,
       };
   }
 }
@@ -935,14 +1020,22 @@ async function endListening() {
   try {
     const captured = await stopListening();
     if (!captured) {
-      listenNotice("No he oído nada, señor. El micrófono ha sido más honesto que de costumbre.");
+      listenNotice(
+        interfaceLanguage() === "en"
+          ? "I heard nothing, sir. The microphone was more honest than usual."
+          : "No he oído nada, señor. El micrófono ha sido más honesto que de costumbre.",
+      );
       return;
     }
 
     const result = await transcribe(captured.wav);
     const text = (result?.text ?? "").replace(/\s+/g, " ").trim();
     if (!text) {
-      listenNotice("Silencio transcrito, señor. Ni una palabra que pueda usar en su contra.");
+      listenNotice(
+        interfaceLanguage() === "en"
+          ? "Silence transcribed, sir. Not a word I can use against you."
+          : "Silencio transcrito, señor. Ni una palabra que pueda usar en su contra.",
+      );
       return;
     }
 
@@ -956,7 +1049,11 @@ async function endListening() {
     runChat(text, result?.language === "en" ? "en" : "es");
   } catch (error) {
     console.warn("[baldborg] transcription failed:", error.message);
-    listenNotice("No he podido transcribir el audio, señor. La culpa es del enlace, por supuesto.");
+    listenNotice(
+      interfaceLanguage() === "en"
+        ? "I could not transcribe the audio, sir. The link is to blame, of course."
+        : "No he podido transcribir el audio, señor. La culpa es del enlace, por supuesto.",
+    );
   } finally {
     listeningBusy = false;
     win?.webContents.send("listen:state", { active: false });
@@ -972,6 +1069,7 @@ function handleCommand(raw) {
       toggleMode();
       break;
     case "open":
+      win?.showInactive();
       applyMode("interactive");
       break;
     case "close":
@@ -1009,8 +1107,13 @@ function handleCommand(raw) {
       }
       break;
     case "language": {
-      const resolved = setLanguage(argument);
-      if (resolved) console.info(`[baldborg] beats language -> ${argument} (${resolved})`);
+      try {
+        const language = setUiLanguage(argument);
+        win?.webContents.send("language:changed", language);
+        console.info(`[baldborg] language -> ${language}`);
+      } catch {
+        /* ignore invalid value */
+      }
       break;
     }
     case "theme": {
@@ -1074,6 +1177,7 @@ function startControlServer() {
             warming,
             listening: isListening(),
             mood: lastMood,
+            language: configSummary().uiLanguage,
             accent: state.accent ?? null,
           }) + "\n",
         );
@@ -1103,11 +1207,18 @@ function registerIpc() {
     mode,
     muted: state.muted,
     autoSpeak: autoSpeakEnabled(),
+    language: (() => {
+      try {
+        return configSummary().uiLanguage;
+      } catch {
+        return "es";
+      }
+    })(),
     effects: (() => {
       try {
         return configSummary().voiceEffects;
       } catch {
-        return "device";
+        return "radio";
       }
     })(),
     material: avatarMaterial(),
@@ -1157,7 +1268,6 @@ if (!gotLock) {
     enableNoWarps();
 
     createWindow();
-    createTray();
     startControlServer();
     registerHotkeys();
     registerIpc();

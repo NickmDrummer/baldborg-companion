@@ -13,10 +13,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 
-export const BEAT_LANGUAGES = new Set(["es", "en", "auto"]);
+export const BEAT_LANGUAGES = new Set(["es", "en"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
 export const VOICE_PROVIDERS = new Set(["kokoro", "azure"]);
-export const VOICE_EFFECTS = new Set(["clean", "device", "radio", "hologram", "corrupt"]);
+export const VOICE_EFFECTS = new Set(["clean", "radio", "corrupt"]);
 export const AZURE_VOICES = {
   es: {
     jorge: { voice: "es-MX-JorgeMultilingualNeural", lang: "es-MX" },
@@ -57,6 +57,17 @@ export function setBeatsEnabled(value) {
     raw.beats.enabled = Boolean(value);
   });
   return Boolean(value);
+}
+
+export function setUiLanguage(value) {
+  if (!BEAT_LANGUAGES.has(value)) throw new Error("invalid language");
+  updateConfig((raw) => {
+    raw.ui = raw.ui ?? {};
+    raw.ui.language = value;
+    raw.beats = raw.beats ?? {};
+    raw.beats.language = value;
+  });
+  return value;
 }
 
 export function setVoiceProvider(value) {
@@ -142,10 +153,11 @@ export function configSummary() {
     voiceProvider: raw.voice?.provider ?? "kokoro",
     voiceEs: raw.voice?.azure?.es?.voice ?? "?",
     voiceEn: raw.voice?.azure?.en?.voice ?? "?",
-    voiceEffects: raw.voice?.effects?.preset ?? "device",
+    voiceEffects: raw.voice?.effects?.preset ?? "radio",
     sttModel: raw.voice?.stt?.model ?? "?",
     beatsEnabled: raw.beats?.enabled !== false,
     beatsLanguage: raw.beats?.language ?? "es",
+    uiLanguage: raw.ui?.language ?? raw.beats?.language ?? "es",
     beatsMin: raw.beats?.minMinutes ?? 20,
     beatsMax: raw.beats?.maxMinutes ?? 45,
     beatsEvery: raw.beats?.everyMinutes ?? 0,

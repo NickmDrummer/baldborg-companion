@@ -22,7 +22,7 @@ body,
   user-select: none;
 }
 
-/* 380px wide in both modes; the window only grows downwards for chat. */
+/* Fixed 380x460 surface in both modes; the chat appears inside it. */
 .stage {
   height: 100%;
   width: 100%;

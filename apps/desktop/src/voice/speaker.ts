@@ -1,6 +1,6 @@
 import { setMouthLevel } from "../avatar/level";
 
-export type EffectsPreset = "clean" | "device" | "radio" | "hologram" | "corrupt";
+export type EffectsPreset = "clean" | "radio" | "corrupt";
 
 /**
  * Plays synthesised WAV buffers and reports the audio envelope so the avatar
@@ -50,21 +50,6 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     threshold: 0,
     ratio: 1,
   },
-  device: {
-    drive: 2.6,
-    highpass: 240,
-    lowpass: 4_800,
-    bits: 9,
-    echo: 0.1,
-    feedback: 0.12,
-    level: 0.9,
-    ring: 0,
-    chorusDepth: 0,
-    chorusWet: 0,
-    pitch: 1,
-    threshold: -14,
-    ratio: 4,
-  },
   radio: {
     drive: 4.5,
     highpass: 380,
@@ -79,21 +64,6 @@ const PRESETS: Record<EffectsPreset, Preset> = {
     pitch: 1,
     threshold: -16,
     ratio: 5,
-  },
-  hologram: {
-    drive: 3,
-    highpass: 180,
-    lowpass: 6_000,
-    bits: 8,
-    echo: 0.22,
-    feedback: 0.18,
-    level: 0.9,
-    ring: 0,
-    chorusDepth: 0,
-    chorusWet: 0,
-    pitch: 1,
-    threshold: -14,
-    ratio: 4,
   },
   corrupt: {
     drive: 7,
@@ -136,7 +106,7 @@ function crushCurve(bits: number) {
   return curve;
 }
 
-export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
+export function createSpeaker(preset: EffectsPreset = "radio"): Speaker {
   let context: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
   let source: AudioBufferSourceNode | null = null;
@@ -177,7 +147,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
     ) {
       return;
     }
-    const settings = PRESETS[currentPreset] ?? PRESETS.device;
+    const settings = PRESETS[currentPreset] ?? PRESETS.radio;
     input.gain.value = settings.level;
     drive.curve = driveCurve(settings.drive);
     drive.oversample = "2x";
@@ -285,7 +255,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
     stop();
     const ctx = ensureContext();
     const buffer = await ctx.decodeAudioData(wav.slice(0));
-    const settings = PRESETS[currentPreset] ?? PRESETS.device;
+    const settings = PRESETS[currentPreset] ?? PRESETS.radio;
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
@@ -341,7 +311,7 @@ export function createSpeaker(preset: EffectsPreset = "device"): Speaker {
       if (muted) stop();
     },
     setEffects(value: EffectsPreset) {
-      currentPreset = PRESETS[value] ? value : "device";
+      currentPreset = PRESETS[value] ? value : "radio";
       applyPreset();
     },
     isSpeaking() {
