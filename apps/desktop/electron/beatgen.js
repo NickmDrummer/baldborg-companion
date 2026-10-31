@@ -24,13 +24,15 @@ const FILLER =
   /\b(es importante|no olvide|prioridad|bienestar|important|do not forget|priority|wellbeing)\b/i;
 
 /** Lines that drift into surreal scenery instead of the client. */
-const SURREAL = /(\b(s[oó]tano|humo|ascensor|portal|abismo|universo|constelaci[oó]n|fantasma|criatura)\b|como si|huele a)/i;
+const SURREAL = /(\b(s[oó]tano|humo|ascensor|portal|abismo|universo|constelaci[oó]n|fantasma|criatura)\b|como si|huele a|coraz[oó]n de f[aá]brica)/i;
 
 const PERSONIFY =
-  /\b(teclado|pantalla|escritorio|taza|silla|mesa|pared|suelo|piso|aire|fr[ií]o|silencio)\s+([a-záéíóúñ]+\s+){0,2}(habla|dice|quiere|sabe|respira|teclea|tecleando|mira|mirando|espera|esperando|huele|siente|recuerda|decide|calle)\b/i;
+  /\b(teclado|pantalla|escritorio|taza|silla|mesa|pared|suelo|piso|aire|fr[ií]o|silencio)\s+([a-záéíóúñ]+\s+){0,2}(habla|dice|quiere|sabe|respira|late|palpita|teclea|tecleando|mira|mirando|espera|esperando|huele|siente|recuerda|decide|calle)\b/i;
+
+const TIME_OPEN = /^(a las|son las|it is|it's|\d{1,2}[:.]\d{2})\b/i;
 
 const TUTEO =
-  /\b(tú|tu|tus|trabajas|tienes|puedes|debes|sabes|crees|haces|estás|quieres|necesitas|buscas|sientes|te|ti|contigo)\b/i;
+  /\b(tú|tu|tus|trabajas|tienes|puedes|debes|sabes|crees|haces|estás|quieres|necesitas|buscas|sientes|moverte|quedarte|mirarte|sentarte|levantarte|ponerte|decirte|darte|hacerte|te|ti|contigo)\b/i;
 
 const FORMAL = [
   [/\btú\b/gi, "usted"],
@@ -51,6 +53,15 @@ const FORMAL = [
   [/\bevitas\b/gi, "evita"],
   [/\bpostergas\b/gi, "posterga"],
   [/\baplazas\b/gi, "aplaza"],
+  [/\bmoverte\b/gi, "moverse"],
+  [/\bquedarte\b/gi, "quedarse"],
+  [/\bmirarte\b/gi, "mirarse"],
+  [/\bsentarte\b/gi, "sentarse"],
+  [/\blevantarte\b/gi, "levantarse"],
+  [/\bponerte\b/gi, "ponerse"],
+  [/\bdecirte\b/gi, "decirle"],
+  [/\bdarte\b/gi, "darle"],
+  [/\bhacerte\b/gi, "hacerle"],
 ];
 
 /** Rewrite the model's accidental tuteo into formal address. */
@@ -116,6 +127,7 @@ function acceptable(text, language, recent, seed) {
   if (STOCK[language].test(text)) return false;
   if (SURREAL.test(text)) return false;
   if (PERSONIFY.test(text)) return false;
+  if (TIME_OPEN.test(text)) return false;
   if (language === "es" && TUTEO.test(text)) return false;
   if ((text.match(/,/g) ?? []).length > 2) return false;
   if (/\b(el cliente|the client)\b/i.test(text)) return false;
@@ -131,7 +143,7 @@ function acceptable(text, language, recent, seed) {
 }
 
 export async function rewriteBeat(seed, language = "es", recent = []) {
-  const { host, model, keepAlive } = brainConfig();
+  const { host, model, keepAlive, numCtx, think } = brainConfig();
 
   const prompt =
     language === "en"
@@ -162,21 +174,27 @@ Escriba solo la reescritura ahora.`;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(`${host}/api/generate`, {
+      const response = await fetch(`${host}/api/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: AbortSignal.timeout(25_000),
         body: JSON.stringify({
           model,
-          prompt,
+          messages: [{ role: "user", content: prompt }],
           stream: false,
           keep_alive: keepAlive,
-          options: { temperature: 0.75, top_p: 0.9, num_predict: 70, num_ctx: 2048 },
+          think,
+          options: {
+            temperature: 0.75,
+            top_p: 0.9,
+            num_predict: 70,
+            num_ctx: numCtx ?? 8192,
+          },
         }),
       });
       if (!response.ok) return null;
       const data = await response.json();
-      const raw = clean(data.response);
+      const raw = clean(data.message?.content);
       if (process.env.BALDBORG_BEAT_DEBUG && raw) {
         console.info(`[baldborg] beat candidate: ${raw}`);
       }

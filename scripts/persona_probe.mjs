@@ -13,6 +13,8 @@ import { SYSTEM_PROMPT } from "../packages/persona/baldborg.mjs";
 
 const HOST = process.env.OLLAMA_HOST ?? "http://127.0.0.1:11434";
 const MODEL = process.argv[2] ?? "qwen3:4b-instruct-2507-q4_K_M";
+const THINK = process.env.OLLAMA_THINK === "0" ? false : undefined;
+const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 8192);
 
 const PROMPTS = [
   "¿Qué piensas de la vida?",
@@ -55,7 +57,8 @@ async function ask(messages) {
       model: MODEL,
       stream: false,
       messages,
-      options: { temperature: 0.85, num_ctx: 8192, num_predict: 120 },
+      ...(THINK === undefined ? {} : { think: THINK }),
+      options: { temperature: 0.85, num_ctx: NUM_CTX, num_predict: 120 },
     }),
   });
   const data = await response.json();

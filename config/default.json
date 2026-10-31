@@ -7,7 +7,8 @@
     "numCtx": 8192,
     "numPredict": 180,
     "keepAlive": "30m",
-    "temperature": 0.85
+    "temperature": 0.85,
+    "think": false
   },
   "voice": {
     "autoSpeak": true,
@@ -65,13 +66,13 @@
     "minMinutes": 20,
     "maxMinutes": 45,
     "silentHours": [
-      23,
-      8
+      0,
+      0
     ],
     "dailyCap": 6,
     "speak": true,
     "language": "es",
-    "everyMinutes": 0,
+    "everyMinutes": 1,
     "generator": "model"
   }
 }

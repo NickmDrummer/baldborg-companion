@@ -231,23 +231,34 @@ export function isAcceptableQuip(quip, reminderText, language, examples = []) {
 }
 
 async function generate(prompt) {
-  const { host, model, keepAlive } = config();
+  const { host, model, keepAlive, numCtx, think } = config();
   try {
-    const response = await fetch(`${host}/api/generate`, {
+    const response = await fetch(`${host}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({
         model,
-        prompt,
+        messages: [{ role: "user", content: prompt }],
         stream: false,
         keep_alive: keepAlive,
-        options: { temperature: 0.85, top_p: 0.9, num_predict: 56, num_ctx: 2048 },
+        options: { temperature: 0.85, top_p: 0.9, num_predict: 56, num_ctx: 8192 },
       }),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`[baldborg] quip http ${response.status}:`, (await response.text()).slice(0, 300));
+      return null;
+    }
     const data = await response.json();
-    return clean(data.response);
+    if (process.env.BALDBORG_QUIP_DEBUG) {
+      console.info("[baldborg] quip cfg:", JSON.stringify({ model, numCtx, think }));
+      console.info("[baldborg] quip message:", JSON.stringify(data.message).slice(0, 300));
+    }
+    const quip = clean(data.message?.content);
+    if (process.env.BALDBORG_QUIP_DEBUG && quip) {
+      console.info(`[baldborg] quip candidate: ${quip}`);
+    }
+    return quip;
   } catch (error) {
     console.warn("[baldborg] quip generation failed:", error.message);
     return null;
@@ -300,6 +311,9 @@ Escriba solo la frase ahora.`;
     if (quip && isAcceptableQuip(quip, reminderText, language, examples)) {
       console.info(`[baldborg] quip: ${quip}`);
       return quip;
+    }
+    if (process.env.BALDBORG_QUIP_DEBUG && quip) {
+      console.info(`[baldborg] quip rejected: ${quip}`);
     }
     if (process.env.BALDBORG_QUIP_DEBUG && quip) {
       console.info(`[baldborg] quip rejected: ${quip}`);

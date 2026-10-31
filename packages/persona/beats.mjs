@@ -135,7 +135,7 @@ export const BEATS = [
     when: (ctx) => ctx.matchToday,
     text: (ctx) => `Hoy juega ${ctx.matchToday}. Mi registro sugiere que su productividad caerá a partir de las 21:00.`,
     textEn: (ctx) =>
-      `${ctx.matchToday} play today. My records suggest your productivity will drop sharply after 21:00.`,
+      `${ctx.matchToday} play today. My records suggest your productivity will drop during the match.`,
   },
   {
     id: "uptime",

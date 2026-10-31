@@ -35,6 +35,7 @@ const DEFAULTS = {
   numPredict: 180,
   keepAlive: "30m",
   temperature: 0.85,
+  think: false,
 };
 
 // Keep a generous window and trim in blocks: dropping two messages every turn
@@ -130,6 +131,7 @@ export async function warmup(onState) {
           { role: "user", content: "ping" },
         ],
         ...(toolsEnabled() ? { tools: toolDefinitions() } : {}),
+        think: config.think,
         options: { num_predict: 1, num_ctx: config.numCtx },
       }),
     });
@@ -377,6 +379,7 @@ async function chatRound(messages, model, sink) {
       stream: true,
       keep_alive: config.keepAlive,
       ...(toolsEnabled() ? { tools: toolDefinitions() } : {}),
+      think: config.think,
       options: {
         temperature: config.temperature,
         num_ctx: config.numCtx,
