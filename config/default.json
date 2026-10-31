@@ -70,6 +70,8 @@
     ],
     "dailyCap": 6,
     "speak": true,
-    "language": "es"
+    "language": "es",
+    "everyMinutes": 0,
+    "generator": "model"
   }
 }

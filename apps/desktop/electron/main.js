@@ -22,13 +22,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
 import { forceBeat, noteInteraction, noteLanguage, setLanguage, startBeats, stopBeats } from "./beats.js";
-import { parseCommand, parseToggle } from "./commands.js";
+import {
+  parseBeatInterval,
+  parseCommand,
+  parseSilentHours,
+  parseToggle,
+} from "./commands.js";
 import {
   configSummary,
   setAutoSpeak,
   setAvatarMaterial,
   setBeatsEnabled,
+  setBeatsEvery,
   setBeatsLanguage,
+  setSilentHours,
 } from "./settings.js";
 import {
   abortListening,
@@ -593,7 +600,9 @@ function configMessage() {
     return [
       `Modelo: ${c.model} · contexto ${c.context} · temperatura ${c.temperature}`,
       `Voz automática: ${c.autoSpeak ? "sí" : "no"} · STT ${c.sttModel}`,
-      `Beats: ${c.beatsEnabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ${c.beatsMin}-${c.beatsMax} min · tope ${c.dailyCap}`,
+      `Beats: ${c.beatsEnabled ? "activos" : "detenidos"} · ${c.beatsLanguage} · ` +
+        `${c.beatsGenerator} · ${c.beatsEvery > 0 ? `cada ${c.beatsEvery} min` : `${c.beatsMin}-${c.beatsMax} min`} · ` +
+        `silencio ${c.silentStart === 0 && c.silentEnd === 0 ? "sin" : `${c.silentStart}-${c.silentEnd}`} · tope ${c.dailyCap}`,
       `Avatar: ${c.material}`,
       `Equipo: ${c.team}`,
       `Ciudad: ${c.city}`,
@@ -618,6 +627,8 @@ function runAppCommand(raw) {
           "/mute [on|off] — silenciar o activar la voz\n" +
           "/voice [on|off] — voz automática persistente\n" +
           "/beats [on|off] — activar o detener los beats\n" +
+          "/beats every <min>|random — frecuencia fija o aleatoria\n" +
+          "/beats silent <inicio>-<fin>|off — horas sin beats\n" +
           "/avatar normal|hologram — material del avatar\n" +
           "/language es|en|auto — idioma de los beats\n" +
           "/club <equipo> — cambiar el equipo favorito\n" +
@@ -660,8 +671,37 @@ function runAppCommand(raw) {
     }
 
     case "/beats": {
+      if (/^silent(\s|$)/i.test(argument)) {
+        const silent = parseSilentHours(argument.replace(/^silent\s*/i, ""));
+        if (!silent) return { ok: false, message: "Uso: /beats silent 23-8 | /beats silent off" };
+        setSilentHours(silent.start, silent.end);
+        if (beatsRunning) startBeatScheduler();
+        return {
+          ok: true,
+          message:
+            silent.start === 0 && silent.end === 0
+              ? "Horas silenciosas desactivadas."
+              : `Horas silenciosas: ${silent.start}:00-${silent.end}:00.`,
+        };
+      }
+
+      const cadence = parseBeatInterval(argument);
+      if (cadence) {
+        const minutes = cadence.random ? 0 : cadence.minutes;
+        setBeatsEvery(minutes);
+        if (beatsRunning) startBeatScheduler();
+        return {
+          ok: true,
+          message: cadence.random
+            ? "Beats en intervalo aleatorio."
+            : `Beats cada ${minutes} minuto${minutes === 1 ? "" : "s"}.`,
+        };
+      }
+
       const next = parseToggle(argument, beatsRunning);
-      if (next === null) return { ok: false, message: "Uso: /beats [on|off]" };
+      if (next === null) {
+        return { ok: false, message: "Uso: /beats [on|off] · /beats every <min> · /beats random" };
+      }
       setBeatsEnabled(next);
       if (next && !beatsRunning) startBeatScheduler();
       if (!next && beatsRunning) {
@@ -817,7 +857,7 @@ function handleCommand(raw) {
       win?.webContents.send("fx:glitch");
       break;
     case "beat":
-      forceBeat();
+      void forceBeat();
       break;
     case "listen":
       if (argument === "start") void beginListening();
@@ -885,8 +925,9 @@ function startControlServer() {
       if (raw === "beat") {
         // Show the bubble: it only renders in passive mode.
         applyMode("passive");
-        const id = forceBeat();
-        connection.end(JSON.stringify({ beat: id }) + "\n");
+        void forceBeat()
+          .then((id) => connection.end(JSON.stringify({ beat: id }) + "\n"))
+          .catch(() => connection.end(JSON.stringify({ beat: null }) + "\n"));
         return;
       }
       if (raw === "status") {

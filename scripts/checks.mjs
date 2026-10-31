@@ -11,7 +11,13 @@ import test from "node:test";
 
 import { formatFixture } from "../apps/desktop/electron/tools.js";
 import { detectLanguage } from "../apps/desktop/electron/voice.js";
-import { parseCommand, parseToggle } from "../apps/desktop/electron/commands.js";
+import {
+  parseBeatInterval,
+  parseCommand,
+  parseSilentHours,
+  parseToggle,
+} from "../apps/desktop/electron/commands.js";
+import { nextIntervalMinutes } from "../apps/desktop/electron/beats.js";
 import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
 
 const ARGENTINA = "America/Argentina/Buenos_Aires";
@@ -106,4 +112,30 @@ test("quip validation rejects a verbatim example", () => {
     isAcceptableQuip(example, "revisar el informe", "es", [example]),
     false,
   );
+});
+
+test("beat cadence parses fixed minutes and random", () => {
+  assert.deepEqual(parseBeatInterval("30"), { minutes: 30 });
+  assert.deepEqual(parseBeatInterval("every 15"), { minutes: 15 });
+  assert.deepEqual(parseBeatInterval("cada 5"), { minutes: 5 });
+  assert.deepEqual(parseBeatInterval("random"), { random: true });
+  assert.deepEqual(parseBeatInterval("every random"), { random: true });
+  assert.deepEqual(parseBeatInterval("0"), { random: true });
+  assert.equal(parseBeatInterval("on"), null);
+  assert.equal(parseBeatInterval("300"), null);
+  assert.equal(parseBeatInterval("quizá"), null);
+});
+
+test("scheduler honours a fixed interval and falls back to a range", () => {
+  assert.equal(nextIntervalMinutes({ everyMinutes: 30, minMinutes: 20, maxMinutes: 45 }), 30);
+  const random = nextIntervalMinutes({ everyMinutes: 0, minMinutes: 20, maxMinutes: 45 });
+  assert.ok(random >= 20 && random <= 45);
+});
+
+test("silent hours parse ranges and off", () => {
+  assert.deepEqual(parseSilentHours("23-8"), { start: 23, end: 8 });
+  assert.deepEqual(parseSilentHours("23:00-08:00"), { start: 23, end: 8 });
+  assert.deepEqual(parseSilentHours("off"), { start: 0, end: 0 });
+  assert.equal(parseSilentHours("24-8"), null);
+  assert.equal(parseSilentHours("noche"), null);
 });

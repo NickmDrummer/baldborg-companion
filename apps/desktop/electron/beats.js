@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BEATS } from "../../../packages/persona/beats.mjs";
+import { rewriteBeat } from "./beatgen.js";
 import { lastMatch, lastWeather } from "./tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,8 @@ const DEFAULTS = {
   enabled: true,
   minMinutes: 20,
   maxMinutes: 45,
+  everyMinutes: 0,
+  generator: "model",
   silentHours: [23, 8],
   dailyCap: 6,
   speak: true,
@@ -58,10 +61,17 @@ function loadState() {
       pending: null,
       beatLanguage: null,
       lastLanguage: null,
+      recentBeats: [],
       ...JSON.parse(readFileSync(STATE_FILE, "utf8")),
     };
   } catch {
-    return { day: "", count: 0, lastFired: {}, lastInteraction: 0 };
+    return {
+      day: "",
+      count: 0,
+      lastFired: {},
+      lastInteraction: 0,
+      recentBeats: [],
+    };
   }
 }
 
@@ -233,33 +243,71 @@ function gatesPass() {
   return true;
 }
 
-function fire() {
+export function nextIntervalMinutes(cfg = config()) {
+  if (Number(cfg.everyMinutes) > 0) return Math.max(1, Number(cfg.everyMinutes));
+  return cfg.minMinutes + Math.random() * Math.max(1, cfg.maxMinutes - cfg.minMinutes);
+}
+
+function deliver(text, id, mood, source, count = true) {
+  state.lastFired[id] = Date.now();
+  state.pending = { id, at: Date.now() };
+  if (count) state.count += 1;
+  state.recentBeats = [...(state.recentBeats ?? []), text].slice(-8);
+  saveState();
+  send({ type: "beat", id, text, mood, speak: config().speak });
+  console.info(`[baldborg] ${source} beat: ${text}`);
+  return id;
+}
+
+function poolBeat(ctx, forced) {
+  if (forced) {
+    const byCondition = BEATS.filter((beat) => beat.when(ctx));
+    const pool = byCondition.length
+      ? byCondition
+      : BEATS.filter((beat) => ["checkin", "offer", "silence"].includes(beat.id));
+    return (
+      pool
+        .slice()
+        .sort((a, b) => (state.lastFired[a.id] ?? 0) - (state.lastFired[b.id] ?? 0))[0] ?? null
+    );
+  }
+  return pickBeat(ctx);
+}
+
+async function beatFor(ctx, language, forced) {
+  const beat = poolBeat(ctx, forced);
+  if (!beat) return null;
+
+  const seed = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
+  if (config().generator !== "pool") {
+    const rewritten = await rewriteBeat(seed, language, state.recentBeats ?? []);
+    if (rewritten) {
+      if (!forced && !gatesPass()) return null;
+      return deliver(rewritten, beat.id, beat.mood, "generated", !forced);
+    }
+  }
+
+  if (!forced && !gatesPass()) return null;
+  return deliver(seed, beat.id, beat.mood, forced ? "forced" : "pool", !forced);
+}
+
+async function fire() {
   // The previous beat was not answered: let it lose weight.
   resolvePending(false);
 
   const language = resolveLanguage();
   const ctx = buildContext(language);
-  const beat = pickBeat(ctx);
-  if (!beat) return null;
-
-  const text = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
-  state.lastFired[beat.id] = Date.now();
-  state.pending = { id: beat.id, at: Date.now() };
-  state.count += 1;
-  saveState();
-  send({ type: "beat", id: beat.id, text, mood: beat.mood, speak: config().speak });
-  console.info(`[baldborg] beat ${beat.id}: ${text}`);
-  return beat.id;
+  return beatFor(ctx, language, false);
 }
 
 function schedule() {
   if (timer) clearTimeout(timer);
   const cfg = config();
   if (!cfg.enabled) return;
-  const minutes = cfg.minMinutes + Math.random() * Math.max(1, cfg.maxMinutes - cfg.minMinutes);
-  timer = setTimeout(() => {
+  const minutes = nextIntervalMinutes(cfg);
+  timer = setTimeout(async () => {
     try {
-      if (gatesPass()) fire();
+      if (gatesPass()) await fire();
     } catch (error) {
       console.warn("[baldborg] beat failed:", error.message);
     }
@@ -296,31 +344,10 @@ export function noteInteraction() {
  * Falls back to the beats that always make sense if the context-specific ones
  * do not apply right now.
  */
-export function forceBeat() {
+export async function forceBeat() {
   resolvePending(false);
 
   const language = resolveLanguage();
   const ctx = buildContext(language);
-  const now = Date.now();
-  const byCondition = BEATS.filter((beat) => beat.when(ctx));
-  const pool = byCondition.length
-    ? byCondition
-    : BEATS.filter((beat) => ["checkin", "offer", "silence"].includes(beat.id));
-
-  // Rotate instead of rolling the dice: consecutive forces walk through the
-  // eligible beats instead of repeating the same one.
-  const beat = pool
-    .slice()
-    .sort((a, b) => (state.lastFired[a.id] ?? 0) - (state.lastFired[b.id] ?? 0))[0];
-  if (!beat) return null;
-
-  const text = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
-  state.lastFired[beat.id] = now;
-  state.pending = { id: beat.id, at: now };
-  state.count += 1;
-  saveState();
-
-  send({ type: "beat", id: beat.id, text, mood: beat.mood, speak: config().speak });
-  console.info(`[baldborg] forced beat ${beat.id}: ${text}`);
-  return beat.id;
+  return beatFor(ctx, language, true);
 }

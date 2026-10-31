@@ -45,6 +45,31 @@ export function setBeatsEnabled(value) {
   return Boolean(value);
 }
 
+export function setBeatsEvery(minutes) {
+  const value = Number(minutes);
+  if (!Number.isInteger(value) || value < 0 || value > 240) {
+    throw new Error("invalid beat interval");
+  }
+  updateConfig((raw) => {
+    raw.beats = raw.beats ?? {};
+    raw.beats.everyMinutes = value;
+  });
+  return value;
+}
+
+export function setSilentHours(start, end) {
+  const from = Number(start);
+  const to = Number(end);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > 23 || to < 0 || to > 23) {
+    throw new Error("invalid silent hours");
+  }
+  updateConfig((raw) => {
+    raw.beats = raw.beats ?? {};
+    raw.beats.silentHours = [from, to];
+  });
+  return [from, to];
+}
+
 export function setBeatsLanguage(value) {
   if (!BEAT_LANGUAGES.has(value)) throw new Error("invalid beat language");
   updateConfig((raw) => {
@@ -76,6 +101,10 @@ export function configSummary() {
     beatsLanguage: raw.beats?.language ?? "es",
     beatsMin: raw.beats?.minMinutes ?? 20,
     beatsMax: raw.beats?.maxMinutes ?? 45,
+    beatsEvery: raw.beats?.everyMinutes ?? 0,
+    silentStart: raw.beats?.silentHours?.[0] ?? 23,
+    silentEnd: raw.beats?.silentHours?.[1] ?? 8,
+    beatsGenerator: raw.beats?.generator ?? "model",
     dailyCap: raw.beats?.dailyCap ?? 6,
     material: raw.avatar?.material ?? "normal",
     team: raw.tools?.team?.name ?? "?",
