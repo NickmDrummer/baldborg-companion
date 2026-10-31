@@ -476,16 +476,21 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
       `[baldborg] fixtures prefetch: ${fixtures ? fixtures.team : "failed"}`,
     );
 
+    const brief = fixtures
+      ? english
+        ? { team: fixtures.team, summary: fixtures.summaryEn }
+        : { team: fixtures.team, summary: fixtures.summary }
+      : null;
     messages.push({
       role: "system",
-      content: fixtures
+      content: brief
         ? english
-          ? `Authoritative team_fixtures result for this turn: ${JSON.stringify(fixtures)}. ` +
-            "Answer only from these data, never from memory. If you mention a time, " +
-            "say it is stadium time."
-          : `Resultado autoritativo de team_fixtures para este turno: ${JSON.stringify(fixtures)}. ` +
-            "Responda solo con estos datos, nunca de memoria. Si menciona una hora, " +
-            "aclare que es la hora del estadio."
+          ? `Authoritative team_fixtures result for this turn: ${JSON.stringify(brief)}. ` +
+            "Answer only from these data, never from memory. Times are already in the " +
+            "client's local timezone; do not convert them."
+          : `Resultado autoritativo de team_fixtures para este turno: ${JSON.stringify(brief)}. ` +
+            "Responda solo con estos datos, nunca de memoria. Las horas ya están en la " +
+            "zona horaria local del cliente; no las convierta."
         : english
           ? "The fixture lookup failed. Say so plainly; do not invent a match or a score."
           : "La consulta de partidos falló. Dígalo claramente; no invente un partido ni un marcador.",
@@ -497,10 +502,10 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
       content: english
         ? "This is a football question about another club. Call team_fixtures with " +
           "that club's name before replying. Never answer from memory. Times are " +
-          "stadium time."
+          "already local; do not convert them."
         : "Esta es una pregunta de fútbol sobre otro club. Llame a team_fixtures " +
           "con el nombre de ese club antes de responder. No responda de memoria. " +
-          "Las horas son la hora del estadio.",
+          "Las horas ya son locales; no las convierta.",
     });
   }
 

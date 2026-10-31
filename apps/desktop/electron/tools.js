@@ -594,8 +594,8 @@ async function teamFixtures(teamArg) {
       event: event.strEvent,
       league: event.strLeague,
       whenIso: date ? date.toISOString() : null,
-      // TheSportsDB sends stadium-local time without a zone. Formatting it as
-      // UTC keeps the source clock instead of inventing a conversion.
+      // TheSportsDB timestamps are UTC. The client cares about its own clock,
+      // so format in the system timezone and never reconvert downstream.
       when: date
         ? date.toLocaleString("es-MX", {
             weekday: "short",
@@ -604,7 +604,16 @@ async function teamFixtures(teamArg) {
             hour: "2-digit",
             minute: "2-digit",
             hour12: false,
-            timeZone: "UTC",
+          })
+        : event.dateEvent,
+      whenEn: date
+        ? date.toLocaleString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
           })
         : event.dateEvent,
       score: event.intHomeScore != null ? `${event.intHomeScore}-${event.intAwayScore}` : null,
@@ -622,17 +631,33 @@ async function teamFixtures(teamArg) {
   if (upcoming.length) {
     parts.push(
       `Próximos partidos: ${upcoming
-        .map((item) => `${item.event} (${item.when}, hora del estadio)`)
+        .map((item) => `${item.event} (${item.when}, hora local)`)
         .join(" · ")}`,
     );
   }
   if (previous.length) {
     const p = previous[0];
     parts.push(
-      `Último resultado: ${p.event}${p.score ? ` ${p.score}` : ""} (${p.when}, hora del estadio)`,
+      `Último resultado: ${p.event}${p.score ? ` ${p.score}` : ""} (${p.when}, hora local)`,
     );
   }
   if (!parts.length) parts.push(`${team.strTeam}: sin partidos próximos ni resultados recientes registrados.`);
+
+  const partsEn = [];
+  if (upcoming.length) {
+    partsEn.push(
+      `Next matches: ${upcoming
+        .map((item) => `${item.event} (${item.whenEn}, local time)`)
+        .join(" · ")}`,
+    );
+  }
+  if (previous.length) {
+    const p = previous[0];
+    partsEn.push(
+      `Last result: ${p.event}${p.score ? ` ${p.score}` : ""} (${p.whenEn}, local time)`,
+    );
+  }
+  if (!partsEn.length) partsEn.push(`${team.strTeam}: no upcoming matches or recent results on record.`);
 
   return {
     team: team.strTeam,
@@ -640,6 +665,7 @@ async function teamFixtures(teamArg) {
     upcoming,
     previous,
     summary: parts.join(". "),
+    summaryEn: partsEn.join(". "),
   };
 }
 

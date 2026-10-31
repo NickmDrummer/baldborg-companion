@@ -171,7 +171,8 @@ function buildContext(language) {
           }
         : null,
     matchToday:
-      match && new Date(match.when).toDateString() === now.toDateString()
+      match &&
+      new Date(match.when).toLocaleDateString("en-CA") === now.toLocaleDateString("en-CA")
         ? match.event
         : null,
   };
