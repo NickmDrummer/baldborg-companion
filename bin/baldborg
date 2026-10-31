@@ -10,14 +10,25 @@
  *   bind = SUPER SHIFT, M, exec, /path/to/BaldborgCompanion/bin/baldborg mute
  *
  * Commands: toggle | open | close | mute | show | hide | quit | listen start|stop
+ *           doctor (read-only health check)
  */
 
+import { spawnSync } from "node:child_process";
 import { connect } from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOCKET = join(homedir(), ".config", "baldborg", "control.sock");
 const [command, ...rest] = process.argv.slice(2);
+
+if (command === "doctor") {
+  const result = spawnSync(process.execPath, [join(ROOT, "scripts", "doctor.mjs")], {
+    stdio: "inherit",
+  });
+  process.exit(result.status ?? 1);
+}
 const payload = ["announce", "language", "listen"].includes(command)
   ? `${command} ${rest.join(" ").trim()}`
   : command;
@@ -40,6 +51,7 @@ const VALID = new Set([
   "hide",
   "quit",
   "capture",
+  "doctor",
 ]);
 
 if (!command || !VALID.has(command)) {

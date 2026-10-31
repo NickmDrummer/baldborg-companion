@@ -28,7 +28,7 @@
       "model": "small",
       "language": "auto"
     },
-    "provider": "kokoro",
+    "provider": "azure",
     "azure": {
       "es": {
         "voice": "es-MX-JorgeMultilingualNeural",
@@ -83,7 +83,7 @@
     "dailyCap": 6,
     "speak": true,
     "language": "es",
-    "everyMinutes": 5,
+    "everyMinutes": 30,
     "generator": "model"
   }
 }
