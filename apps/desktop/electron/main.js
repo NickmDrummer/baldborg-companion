@@ -293,7 +293,7 @@ async function ensurePlacement() {
   const workspace = activeWorkspaceId();
   await setOverlayFocusable(true);
   await focusOverlay();
-  await hyprDispatch(`hl.dsp.window.move({ x = ${localX}, y = ${localY} })`);
+  await hyprDispatch(`hl.dsp.window.move({ x = ${globalX}, y = ${globalY} })`);
   if (mode === "passive") {
     await setOverlayFocusable(false);
     focusPreviousOnWorkspace(workspace);
@@ -336,14 +336,16 @@ function focusPreviousOnWorkspace(workspace = activeWorkspaceId()) {
 }
 
 /**
- * Resize the surface for the current mode while keeping the head visually
- * still: the horizontal centre and the top edge stay put, and the chat bar
- * grows out of the bottom of the window.
+ * Resize the surface for the current mode. The width never changes and the
+ * window is anchored to the bottom-right of its monitor, so the console grows
+ * below the head without any horizontal reflow. Hyprland's move dispatcher
+ * takes global coordinates; local ones would send secondary monitors back to
+ * the primary output.
  */
-async function applyWindowGeometry(next) {
+async function applyWindowGeometry(next, monitorOverride = null) {
   const size = SIZES[next] ?? SIZES.passive;
   const client = hyprlandClient();
-  const monitor = monitorForClient(client);
+  const monitor = monitorOverride ?? monitorForClient(client);
   if (!monitor) return;
 
   const expectedX = monitor.x + monitor.width - size.width - EDGE_MARGIN;
@@ -368,14 +370,18 @@ async function applyWindowGeometry(next) {
   await setOverlayFocusable(true);
   await focusOverlay();
   await hyprDispatch(`hl.dsp.window.resize({ x = ${size.width}, y = ${size.height} })`);
-  await hyprDispatch(
-    `hl.dsp.window.move({ x = ${expectedX - monitor.x}, y = ${expectedY - monitor.y} })`,
-  );
 
   if (mode === "passive") {
     await setOverlayFocusable(false);
     focusPreviousOnWorkspace(workspace);
   }
+
+  // Target the window explicitly: after focus changes Hyprland can re-home a
+  // pinned window to the primary monitor. The dispatcher uses global
+  // coordinates, so this also moves it to the captured output.
+  await hyprDispatch(
+    `hl.dsp.window.move({ x = ${expectedX}, y = ${expectedY}, window = "class:${WM_CLASS}" })`,
+  );
 }
 
 let beatsRunning = false;
@@ -484,6 +490,10 @@ async function applyMode(next) {
   mode = next === "interactive" ? "interactive" : "passive";
   if (!win) return;
 
+  // Capture the monitor before focus changes: the compositor may re-home a
+  // pinned window when focus moves to another output.
+  const monitor = monitorForClient(hyprlandClient());
+
   if (mode === "passive") {
     // Capture the workspace before touching focus: Hyprland may switch away
     // the moment the overlay stops being focusable.
@@ -493,17 +503,6 @@ async function applyMode(next) {
     focusPreviousOnWorkspace(workspace);
   } else {
     win.setIgnoreMouseEvents(false);
-
-    // A pinned window keeps its home workspace; focusing it from another
-    // workspace makes Hyprland jump there. Adopt the active workspace first.
-    const workspace = activeWorkspaceId();
-    const client = hyprlandClient();
-    if (client && workspace !== null && client.workspace?.id !== workspace) {
-      await hyprDispatch(
-        `hl.dsp.window.move({ workspace = "${workspace}", window = "class:${WM_CLASS}" })`,
-      );
-    }
-
     await setOverlayFocusable(true);
     await focusOverlay();
     // Make sure the chat input owns the keyboard, even if the window was
@@ -512,8 +511,8 @@ async function applyMode(next) {
   }
 
   updateTrayMenu();
-  // Resize first, then let the renderer swap the layout.
-  await applyWindowGeometry(mode);
+  // Resize/position first, then let the renderer swap the layout.
+  await applyWindowGeometry(mode, monitor);
   win.webContents.send("mode:changed", mode);
 }
 
