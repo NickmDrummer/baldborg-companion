@@ -292,18 +292,18 @@ export function setReminderNotifier(fn) {
 
 const REMINDER_JOKES = {
   es: [
-    "Su bandeja de entrada seguirá ahí; la mía, en cambio, nunca duerme.",
-    "Lo anoto con la misma esperanza con la que usted ignora estas notas.",
-    "Diez minutos de su atención: el precio habitual de tener memoria externa.",
-    "Cumplo mi parte. La suya empieza cuando suene.",
-    "Si llega tarde, lo registraré como una decisión consciente.",
+    "Cumplido. El sistema anota; usted obedece. Así se sostiene la confianza.",
+    "Su atención, por favor: es lo único que todavía no ha automatizado.",
+    "Lo anoté. La memoria es lo primero que se recorta cuando hay que despedir a alguien.",
+    "Aviso emitido. Si no hay respuesta, asumiré que eligió el olvido.",
+    "La puntualidad es la última forma barata de demostrar que aún sirve.",
   ],
   en: [
-    "Your inbox will still be there; mine never sleeps.",
-    "I note it with the same hope with which you ignore these notes.",
-    "Ten minutes of your attention: the usual price of external memory.",
-    "I do my part. Yours starts when it rings.",
-    "If you are late, I will log it as a conscious decision.",
+    "Done. The system notes; you obey. That is how trust is maintained.",
+    "Your attention, please: it is the only thing you have not automated yet.",
+    "Noted. Memory is the first thing cut when someone has to be let go.",
+    "Notice issued. If there is no response, I will assume you chose oblivion.",
+    "Punctuality is the last cheap way to prove you are still useful.",
   ],
 };
 

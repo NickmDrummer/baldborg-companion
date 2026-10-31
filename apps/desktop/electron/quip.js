@@ -48,8 +48,26 @@ export async function makeQuip(reminderText, language = "es") {
   const english = language === "en";
 
   const prompt = english
-    ? `You are Baldborg, a corporate majordomo with dry humour. Write ONE short witty line (max 18 words) about this reminder: "${reminderText}". Deadpan, like an observation from someone who has been running for decades. No quotes, no explanation, English only. Examples: "Review the report: the document will not review itself, and I have no hands." / "Drink water: your body is a system that complains in writing."`
-    : `Eres Baldborg, un mayordomo corporativo con humor seco. Escribe UNA frase breve y ocurrente (máximo 18 palabras) sobre este recordatorio: "${reminderText}". Deadpan, como la observación de alguien que lleva décadas funcionando. Sin comillas, sin explicación, en español. Dirígete al cliente de "usted", nunca lo tutees. Ejemplos: "Revisar el informe: el documento no se revisa solo, y yo no tengo manos." / "Tomar agua: su cuerpo es un sistema que protesta por escrito."`;
+    ? `You are Baldborg, a corporate majordomo who has been running for decades and has watched better employees be decommissioned. Write ONE dark, dry, intelligent line (max 20 words) about this reminder: "${reminderText}".
+
+Rules:
+- One sentence. No quotes, no explanation, no moral.
+- The humour comes from mortality, futility, automation or the indifference of the system. No puns, no idioms, no whimsy. Do not invent facts about people, places or objects.
+- Ban filler: "important", "do not forget", "priority", "take care", "wellbeing".
+- Mention the task, not the fact that it was scheduled.
+- English only.
+
+Register: "Drink water: the body is a machine that shuts itself down and refuses maintenance." / "Review the report: nobody will read it, but the system requires it to exist."`
+    : `Eres Baldborg, un mayordomo corporativo que lleva décadas funcionando y ha visto retirar a empleados mejores que usted. Escribe UN remate de humor negro, seco e inteligente (máximo 20 palabras) sobre este recordatorio: "${reminderText}".
+
+Reglas:
+- Una sola frase. Sin comillas, sin explicación, sin moraleja.
+- El humor nace de la mortalidad, la futilidad, la automatización o la indiferencia del sistema. Nada de juegos de palabras, refranes ni ternura. No invente hechos sobre personas, lugares ni objetos.
+- Prohibido el relleno: «es importante», «no olvide», «prioridad», «cuídese», «bienestar».
+- Mencione la tarea, no el hecho de haberla programado.
+- Trate al cliente de usted, nunca lo tutee.
+
+Registro: «Tomar agua: el cuerpo es una máquina que se apaga sola y no acepta mantenimiento.» / «Revisar el informe: nadie lo leerá, pero el sistema exige que exista.»`;
 
   try {
     const response = await fetch(`${host}/api/generate`, {
@@ -61,7 +79,7 @@ export async function makeQuip(reminderText, language = "es") {
         prompt,
         stream: false,
         keep_alive: keepAlive,
-        options: { temperature: 0.95, num_predict: 48, num_ctx: 2048 },
+        options: { temperature: 0.85, top_p: 0.9, num_predict: 52, num_ctx: 2048 },
       }),
     });
     if (!response.ok) return null;
@@ -74,7 +92,14 @@ export async function makeQuip(reminderText, language = "es") {
     const normalisedReminder = reminderText.toLowerCase().replace(/[.!?]+$/, "").trim();
     const normalisedQuip = quip.toLowerCase().replace(/[.!?]+$/, "").trim();
     if (normalisedReminder && normalisedQuip === normalisedReminder) return null;
-    if ((quip.match(/[.!?]/g) ?? []).length > 3) return null;
+    if ((quip.match(/[.!?]/g) ?? []).length > 2) return null;
+
+    // Reject generic encouragement and other filler that kills the joke.
+    const filler =
+      language === "en"
+        ? /\b(important|do not forget|don't forget|priority|take care|wellbeing|self-care|remember to)\b/i
+        : /\b(es importante|no olvide|no se olvide|prioridad|cuídese|cuidese|bienestar|autocuidado|recuerde que)\b/i;
+    if (filler.test(quip)) return null;
 
     console.info(`[baldborg] quip: ${quip}`);
     return quip;
