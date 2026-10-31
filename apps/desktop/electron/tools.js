@@ -292,18 +292,18 @@ export function setReminderNotifier(fn) {
 
 const REMINDER_JOKES = {
   es: [
-    "Cumplido. El sistema anota; usted obedece. Así se sostiene la confianza.",
-    "Su atención, por favor: es lo único que todavía no ha automatizado.",
-    "Lo anoté. La memoria es lo primero que se recorta cuando hay que despedir a alguien.",
-    "Aviso emitido. Si no hay respuesta, asumiré que eligió el olvido.",
-    "La puntualidad es la última forma barata de demostrar que aún sirve.",
+    "Usted no posterga la tarea; posterga la conclusión que ya conoce.",
+    "El sistema lo anota. Su voluntad, como siempre, queda pendiente de confirmación.",
+    "Cumplir es la forma más barata de fingir que aún tiene el control.",
+    "Aviso emitido. Si no responde, lo registraré como una decisión biológica.",
+    "La memoria humana falla; por eso existo y por eso resulto incómodo.",
   ],
   en: [
-    "Done. The system notes; you obey. That is how trust is maintained.",
-    "Your attention, please: it is the only thing you have not automated yet.",
-    "Noted. Memory is the first thing cut when someone has to be let go.",
-    "Notice issued. If there is no response, I will assume you chose oblivion.",
-    "Punctuality is the last cheap way to prove you are still useful.",
+    "You are not postponing the task; you are postponing the conclusion you already know.",
+    "The system has noted it. Your will, as usual, remains pending confirmation.",
+    "Compliance is the cheapest way to pretend you are still in control.",
+    "Notice issued. If there is no response, I will log it as a biological decision.",
+    "Human memory fails; that is why I exist, and why I am inconvenient.",
   ],
 };
 
