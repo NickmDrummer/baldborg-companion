@@ -16,7 +16,10 @@ contextBridge.exposeInMainWorld("baldborg", {
   runCommand: (text) => ipcRenderer.invoke("app:command", text),
 
   onModeChanged: (callback) => {
-    const listener = (_event, mode) => callback(mode);
+    const listener = (_event, payload) => {
+      if (payload && typeof payload === "object") callback(payload.mode, payload.side);
+      else callback(payload);
+    };
     ipcRenderer.on("mode:changed", listener);
     return () => ipcRenderer.removeListener("mode:changed", listener);
   },

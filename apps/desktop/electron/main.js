@@ -615,9 +615,10 @@ async function applyMode(next) {
     win.webContents.send("window:focus");
   }
 
-  // Resize/position first, then let the renderer swap the layout.
+  // Resize/position first, then hand the renderer the mode and side together:
+  // separate events can paint one frame of the old vertical layout.
   await applyWindowGeometry(mode, monitor);
-  win.webContents.send("mode:changed", mode);
+  win.webContents.send("mode:changed", { mode, side: chatSide });
 }
 
 function toggleMode() {

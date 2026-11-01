@@ -152,7 +152,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const sockets = [
     { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
     { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
-    { x: 0, y: -dims.y * 0.22, w: dims.x * 0.24, h: dims.y * 0.18 },
+    { x: 0, y: -dims.y * 0.235, w: dims.x * 0.32, h: dims.y * 0.09 },
   ];
   for (const socket of sockets) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), socketMaterial);
@@ -166,8 +166,8 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   mouthMaterial.uniforms.uMouth.value = 1;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(dims.x * 0.15, dims.y * 0.15, 1);
-  mouth.position.set(0, -dims.y * 0.22, FORWARD * surfaceZ(0, -dims.y * 0.22, dims.z * 0.34));
+  mouth.scale.set(dims.x * 0.22, dims.y * 0.09, 1);
+  mouth.position.set(0, -dims.y * 0.235, FORWARD * surfaceZ(0, -dims.y * 0.235, dims.z * 0.34));
   mouth.renderOrder = 2;
   group.add(mouth);
 

@@ -84,7 +84,7 @@ interface BaldborgApi {
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   runCommand: (text: string) => Promise<{ ok: boolean; message: string; reset?: boolean }>;
-  onModeChanged: (callback: (mode: Mode) => void) => () => void;
+  onModeChanged: (callback: (mode: Mode, side?: ChatSide) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
   onAutoSpeak: (callback: (value: boolean) => void) => () => void;
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
@@ -219,8 +219,9 @@ export default function App() {
       );
     });
 
-    const offMode = api?.onModeChanged((next) => {
+    const offMode = api?.onModeChanged((next, side) => {
       setMode(next);
+      if (side) setChatSide(side);
       if (next === "interactive") setBeat(null);
       if (next === "passive") {
         setDraft("");
