@@ -26,7 +26,7 @@ import {
   newEpicTitles,
   nextEpicCheck,
 } from "../apps/desktop/electron/epic.js";
-import { detectLanguage } from "../apps/desktop/electron/voice.js";
+import { detectLanguage, resolveVoiceLanguage } from "../apps/desktop/electron/voice.js";
 import {
   parseBeatInterval,
   parseCommand,
@@ -349,4 +349,11 @@ test("Steam summary quotes titles and only shows the end date", () => {
     formatSteamFreeGames(games, true),
     'Free to keep on Steam: "Asleep: Act 1" (Until 2 Nov).',
   );
+});
+
+test("voice language follows the interface, not the message text", () => {
+  assert.equal(resolveVoiceLanguage({ ui: { language: "en" } }), "en");
+  assert.equal(resolveVoiceLanguage({ ui: { language: "es" } }), "es");
+  assert.equal(resolveVoiceLanguage({ ui: { language: "en" }, beats: { language: "es" } }), "en");
+  assert.equal(resolveVoiceLanguage({}), "en");
 });

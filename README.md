@@ -8,6 +8,16 @@ Everything runs on the machine. Network access is only used by the optional
 tools (weather, fixtures, exchange rates, Epic and Steam) and optional Azure
 TTS.
 
+## Demo
+
+| Idle | Chat |
+| --- | --- |
+| ![Baldborg idle](assets/screenshots/idle.png) | ![Baldborg chat](assets/screenshots/chat.png) |
+
+![Baldborg bar widget](assets/screenshots/widget.png)
+
+[Watch the short demo video](assets/demo/baldborg-demo.mp4) (MP4, ~4 MB).
+
 ## Requirements
 
 - Omarchy (Arch + Hyprland) with Lua config, or another Wayland setup with the
@@ -125,6 +135,11 @@ Settings are applied without restarting unless they affect model loading.
 Kokoro is the default and is installed by the setup script. Azure Speech is
 optional; configure it in `~/.config/baldborg/voice.json` with mode 600.
 Piper is not implemented.
+
+The voice follows the interface language: English uses the English voice,
+Spanish uses the Spanish voice. The language of an individual chat message
+does not switch voices; use `/language es|en` to change both the interface and
+the voice.
 
 ## Tools and commands
 

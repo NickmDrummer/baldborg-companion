@@ -111,7 +111,20 @@ function voiceConfig() {
   }
 }
 
-/** Cheap language guess: enough to pick between the Spanish and English voices. */
+/** The selected interface language owns the voice; message text never changes it. */
+export function resolveVoiceLanguage(raw = {}) {
+  return raw.ui?.language === "es" ? "es" : "en";
+}
+
+export function selectedVoiceLanguage() {
+  try {
+    return resolveVoiceLanguage(readConfig());
+  } catch {
+    return "en";
+  }
+}
+
+/** Cheap language guess for chat routing and STT, not for voice selection. */
 export function detectLanguage(text) {
   const sample = text.toLowerCase();
   // Accents are strong evidence for Spanish and cheap to check.
@@ -222,7 +235,7 @@ export function autoSpeakEnabled() {
 
 export async function synthesize(text) {
   const config = voiceConfig();
-  const lang = detectLanguage(text);
+  const lang = selectedVoiceLanguage();
   const voice = config[lang] ?? config.es;
 
   if (config.provider === "azure") {
@@ -270,6 +283,7 @@ export function voiceStatus() {
     ready: Boolean(child),
     error: lastError,
     provider: config.provider ?? "kokoro",
+    language: selectedVoiceLanguage(),
     azureConfigured: Boolean(azureCredentials().key && azureCredentials().region),
   };
 }
