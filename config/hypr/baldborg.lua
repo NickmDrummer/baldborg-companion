@@ -39,16 +39,24 @@ o.bind("SUPER + SHIFT + V", "Baldborg: hablar (soltar)", baldborg .. " listen st
 o.launch_on_start("__REPO__/bin/baldborg-start")
 o.bind("SUPER + SHIFT + H", "Baldborg: ocultar", baldborg .. " hide")
 
--- SUPER + LMB on the idle status pill starts a clamped drag. Anywhere else
--- the normal Omarchy window-drag behaviour is preserved.
-hl.unbind("SUPER + mouse:272")
-hl.bind("SUPER + mouse:272", function()
-  local overlay = hl.get_window("class:baldborg-desktop")
-  if overlay ~= nil then
+-- SUPER + SHIFT + LMB on the idle status pill starts a clamped drag.
+-- Plain SUPER + LMB stays the normal Omarchy window drag.
+local function over_pill()
+  local w = hl.get_window("class:baldborg-desktop")
+  if w == nil then return false end
+  local c = hl.get_cursor_pos()
+  local pill_w = math.min(180, w.size.x)
+  local left = w.at.x + (w.size.x - pill_w) / 2
+  local top = w.at.y + w.size.y - 20
+  return c.x >= left and c.x <= left + pill_w and c.y >= top and c.y <= w.at.y + w.size.y
+end
+
+-- Super+LMB stays the normal Omarchy window drag. The idle pill uses
+-- Super+Shift+LMB so the two actions do not fight.
+hl.bind("SUPER + SHIFT + mouse:272", function()
+  if over_pill() then
     hl.dispatch(hl.dsp.exec_cmd(baldborg .. " drag-start"))
-  else
-    hl.dispatch(hl.dsp.window.drag())
   end
 end, { mouse = true })
-hl.bind("SUPER + mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true })
+hl.bind("SUPER + SHIFT + mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true })
 hl.bind("mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true, non_consuming = true })

@@ -22,7 +22,7 @@ Bindings created by the file:
 | `Super+Shift+M` | Mute / unmute voice |
 | `Super+Shift+R` | Replay the last reply |
 | `Super+Shift+H` | Hide the overlay |
-| `Super + left drag` on the pill | Move the idle overlay across monitors, clamped on release |
+| `Super+Shift + left drag` on the pill | Move the idle overlay across monitors, clamped on release |
 
 `Super+Shift+D` and `Super+Shift+M` were previously bound to Docker and
 Music; the module calls `hl.unbind` before `o.bind` so the old actions are
