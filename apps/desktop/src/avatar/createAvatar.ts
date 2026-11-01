@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { loadHead, MOUTH_UNIFORMS, type HeadMaterial } from "./bust";
-import { onGlitchRequest } from "./effects";
+import { onCalmRequest, onGlitchRequest } from "./effects";
 import { onMouthLevel } from "./level";
 
 export type Mood = "neutral" | "wry" | "concerned" | "stern" | "amused" | "ominous" | "pleased";
@@ -137,6 +137,10 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
   let speaking = false;
   let mouthLevel = 0;
   let featureGlitch = 0;
+  let calmUntil = 0;
+  const stopCalm = onCalmRequest((ms) => {
+    calmUntil = performance.now() + Math.max(0, ms);
+  });
   const stopMouth = onMouthLevel((value) => {
     mouthLevel = value;
   });
@@ -173,7 +177,7 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     // Glitch bursts: occasional signal failures.
     nextGlitch -= delta;
     if (nextGlitch <= 0) {
-      glitchBurst = 0.12 + Math.random() * 0.2;
+      if (performance.now() >= calmUntil) glitchBurst = 0.12 + Math.random() * 0.2;
       nextGlitch = 3 + Math.random() * 7;
     }
     if (glitchBurst > 0) {
@@ -262,6 +266,7 @@ export function createAvatar(container: HTMLElement, material: HeadMaterial = "n
     dispose() {
       disposed = true;
       stopMouth();
+      stopCalm();
       stopGlitch();
       observer.disconnect();
       renderer.dispose();

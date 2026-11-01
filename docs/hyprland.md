@@ -59,8 +59,8 @@ floating windows, and keeping it separate guarantees it is evaluated after
 parsed as literal strings and silently ignored.
 
 `size` is only the initial geometry (passive mode). The app resizes its own
-surface: 200x330 for the head and the proactive line, 380x460 when the
-chat opens.
+surface: 208x222 idle and 568x222 with the side chat. The console is 340x214,
+from the visible head top to the bottom of the status pill.
 
 ## Keybindings and why they do not use Electron
 
@@ -112,17 +112,17 @@ hyprctl clients -j | jq -r '.[] | select(.class | test("baldborg")) | "\(.class)
 Expected:
 
 ```
-baldborg-desktop at=[1606, 726] size=[200, 330] pinned=true
+baldborg-desktop at=[1704, 850] size=[208, 222] pinned=true
 ```
 
 with the chat open:
 
 ```
-baldborg-desktop at=[1516, 596] size=[380, 460] pinned=true
+baldborg-desktop at=[1344, 850] size=[568, 222] pinned=true
 ```
 
-The head keeps its centre and top edge between both states; only the surface
-grows to make room for the console.
+The head keeps its centre and top edge between both states; only the width
+grows to make room for the console. The height never changes.
 
 If the class differs, change `WM_CLASS` in `apps/desktop/electron/main.js`.
 If nothing matches, the window is running under XWayland; force native Wayland

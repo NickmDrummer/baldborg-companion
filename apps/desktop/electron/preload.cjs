@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("baldborg", {
   getHistory: () => ipcRenderer.invoke("brain:history"),
   resetMemory: () => ipcRenderer.invoke("brain:reset"),
   runCommand: (text) => ipcRenderer.invoke("app:command", text),
+  beginDrag: () => ipcRenderer.send("window:drag-start"),
+  dragTo: () => ipcRenderer.send("window:drag-move"),
+  endDrag: () => ipcRenderer.send("window:drag-end"),
 
   onModeChanged: (callback) => {
     const listener = (_event, payload) => {

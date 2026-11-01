@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Avatar from "./avatar/Avatar";
 import type { HeadMaterial } from "./avatar/bust";
 import type { Mood } from "./avatar/createAvatar";
-import { requestGlitch } from "./avatar/effects";
+import { requestCalm, requestGlitch } from "./avatar/effects";
 import { createSpeaker, type EffectsPreset } from "./voice/speaker";
 import { TOOL_LABELS, ui, type UiLanguage } from "./i18n";
 
@@ -84,6 +84,9 @@ interface BaldborgApi {
   getHistory: () => Promise<{ role: Role; content: string }[]>;
   resetMemory: () => Promise<void>;
   runCommand: (text: string) => Promise<{ ok: boolean; message: string; reset?: boolean }>;
+  beginDrag: () => void;
+  dragTo: () => void;
+  endDrag: () => void;
   onModeChanged: (callback: (mode: Mode, side?: ChatSide) => void) => () => void;
   onMutedChanged: (callback: (muted: boolean) => void) => () => void;
   onAutoSpeak: (callback: (value: boolean) => void) => () => void;
@@ -162,6 +165,7 @@ export default function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
   const streamingId = useRef<number | null>(null);
   const speaker = useRef<ReturnType<typeof createSpeaker> | null>(null);
   const mutedRef = useRef(false);
@@ -267,7 +271,10 @@ export default function App() {
       setListenPhase(state.active ? (state.phase ?? "recording") : null);
     });
 
-    const offGlitch = api?.onGlitch(() => requestGlitch());
+    const offGlitch = api?.onGlitch(() => {
+      requestGlitch();
+      requestCalm(700);
+    });
     const offReplay = api?.onVoiceReplay(() => {
       if (lastReply.current) void speakText(lastReply.current);
     });
@@ -513,7 +520,31 @@ export default function App() {
         )
       ) : (
         <div className="console">
-          <div className="grip">
+          <div
+            className="grip"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              dragging.current = true;
+              api?.beginDrag();
+            }}
+            onPointerMove={() => {
+              if (!dragging.current) return;
+              api?.dragTo();
+            }}
+            onPointerUp={(event) => {
+              if (!dragging.current) return;
+              dragging.current = false;
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              api?.endDrag();
+            }}
+            onPointerCancel={() => {
+              if (!dragging.current) return;
+              dragging.current = false;
+              api?.endDrag();
+            }}
+          >
             <span className="dot" />
             <span className="grip-title">BALDBORG</span>
             <span className="grip-sep">·</span>

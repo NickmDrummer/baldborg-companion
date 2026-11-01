@@ -151,20 +151,21 @@ function avatarMaterial() {
 
 // Closed frame. When the chat opens it grows sideways to SIDE_WIDTH so the
 // console can sit next to the head instead of pushing the head down.
-const WINDOW_HEIGHT = 460;
+const IDLE_WIDTH = 208;
+const WINDOW_HEIGHT = 222;
 const HEAD_BOX = 200;
 const CONSOLE_BOX = 340;
 const SIDE_GAP = 12;
 const SIDE_MARGIN = 8;
 const SIDE_WIDTH = SIDE_MARGIN * 2 + HEAD_BOX + SIDE_GAP + CONSOLE_BOX; // 568
-const HEAD_CENTER_STACKED = 190;
+const HEAD_CENTER_STACKED = IDLE_WIDTH / 2; // 104
 const HEAD_CENTER_RIGHT = SIDE_MARGIN + HEAD_BOX / 2; // 108
 const HEAD_CENTER_LEFT = SIDE_WIDTH - SIDE_MARGIN - HEAD_BOX / 2; // 460
 const SIZES = {
-  passive: { width: 380, height: WINDOW_HEIGHT },
+  passive: { width: IDLE_WIDTH, height: WINDOW_HEIGHT },
 };
 /** Gap between the overlay and the monitor edge, in px. */
-const EDGE_MARGIN = 24;
+const EDGE_MARGIN = 8;
 
 const STATE_DIR = join(homedir(), ".config", "baldborg");
 const STATE_FILE = join(STATE_DIR, "state.json");
@@ -180,6 +181,7 @@ let state = loadState();
 let mode = "passive";
 let chatSide = "stacked";
 let headAnchorX = null;
+let drag = null;
 let lastMood = "neutral";
 let warming = false;
 
@@ -374,7 +376,7 @@ function chooseChatSide(headCenterX, monitor) {
   return headCenterX <= monitorCenter ? "right" : "left";
 }
 
-function geometryFor(next, monitor, client) {
+function geometryFor(next, monitor, client, preserveY = false) {
   const interactive = next === "interactive";
   const fallbackCenter =
     headAnchorX ?? (client?.at ? client.at[0] + (client.size?.[0] ?? SIZES.passive.width) / 2 : null);
@@ -387,7 +389,9 @@ function geometryFor(next, monitor, client) {
   const minX = (monitor?.x ?? 0) + EDGE_MARGIN;
   const maxX = (monitor?.x ?? 0) + (monitor?.width ?? width) - width - EDGE_MARGIN;
   const x = Math.max(minX, Math.min(idealX, maxX));
-  const y = (monitor?.y ?? 0) + (monitor?.height ?? WINDOW_HEIGHT) - WINDOW_HEIGHT - EDGE_MARGIN;
+  const minY = (monitor?.y ?? 0) + EDGE_MARGIN;
+  const maxY = (monitor?.y ?? 0) + (monitor?.height ?? WINDOW_HEIGHT) - WINDOW_HEIGHT - EDGE_MARGIN;
+  const y = preserveY && client?.at ? Math.max(minY, Math.min(client.at[1], maxY)) : maxY;
   return { side, width, height: WINDOW_HEIGHT, x, y, center: x + offset };
 }
 
@@ -396,12 +400,12 @@ function geometryFor(next, monitor, client) {
  * the chat only changes the window width and which side the console uses.
  * Hyprland's move dispatcher takes global coordinates.
  */
-async function applyWindowGeometry(next, monitorOverride = null) {
+async function applyWindowGeometry(next, monitorOverride = null, options = {}) {
   const client = hyprlandClient();
   const monitor = monitorOverride ?? monitorForClient(client);
   if (!monitor) return chatSide;
 
-  const geometry = geometryFor(next, monitor, client);
+  const geometry = geometryFor(next, monitor, client, options.preserveY === true);
   chatSide = geometry.side;
   headAnchorX = geometry.center;
 
@@ -435,6 +439,80 @@ async function applyWindowGeometry(next, monitorOverride = null) {
     `hl.dsp.window.move({ x = ${geometry.x}, y = ${geometry.y}, window = "class:${WM_CLASS}" })`,
   );
   return chatSide;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function cursorPosition() {
+  try {
+    const [x, y] = execFileSync("hyprctl", ["cursorpos"], { timeout: 1000 })
+      .toString()
+      .trim()
+      .split(",")
+      .map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+  } catch {
+    /* compositor unavailable */
+  }
+  return null;
+}
+
+/** Start a clamped drag from the console grip. */
+function beginDrag() {
+  if (mode !== "interactive") return;
+  const pointer = cursorPosition();
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+  if (!pointer || !client?.at || !monitor) return;
+  drag = {
+    pointerX: pointer.x,
+    pointerY: pointer.y,
+    originX: client.at[0],
+    originY: client.at[1],
+    width: client.size?.[0] ?? SIDE_WIDTH,
+    height: client.size?.[1] ?? WINDOW_HEIGHT,
+    monitor,
+    lastX: null,
+    lastY: null,
+    lastTick: 0,
+  };
+}
+
+function dragTo() {
+  if (!drag) return;
+  const now = Date.now();
+  if (now - drag.lastTick < 12) return;
+  drag.lastTick = now;
+
+  const pointer = cursorPosition();
+  if (!pointer) return;
+  const minX = drag.monitor.x + EDGE_MARGIN;
+  const maxX = drag.monitor.x + drag.monitor.width - drag.width - EDGE_MARGIN;
+  const minY = drag.monitor.y + EDGE_MARGIN;
+  const maxY = drag.monitor.y + drag.monitor.height - drag.height - EDGE_MARGIN;
+  const x = clamp(drag.originX + pointer.x - drag.pointerX, minX, maxX);
+  const y = clamp(drag.originY + pointer.y - drag.pointerY, minY, maxY);
+  if (x === drag.lastX && y === drag.lastY) return;
+  drag.lastX = x;
+  drag.lastY = y;
+  void hyprDispatch(`hl.dsp.window.move({ x = ${x}, y = ${y}, window = "class:${WM_CLASS}" })`);
+}
+
+/** Finish a drag and re-pick the side if the head crossed the monitor centre. */
+async function endDrag() {
+  const active = drag;
+  drag = null;
+  if (!active || mode !== "interactive") return;
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+  const center = headCenterForClient(client, chatSide);
+  if (center == null || !monitor) return;
+  headAnchorX = center;
+  if (chooseChatSide(center, monitor) !== chatSide) {
+    await applyWindowGeometry("interactive", monitor, { preserveY: true });
+  }
 }
 
 /** On restart the overlay starts on workspace 1 of the focused output. */
@@ -560,8 +638,16 @@ function setOverlayFocusable(focusable) {
  * interactive -> focusable, accepts clicks, shows the chat bar, draggable
  */
 async function applyMode(next) {
+  const previous = mode;
   mode = next === "interactive" ? "interactive" : "passive";
   if (!win) return;
+
+  // Short signal failure before the console appears. The avatar owns the
+  // red/black glitch; this keeps the layout transition quiet afterwards.
+  if (previous === "passive" && mode === "interactive") {
+    win.webContents.send("fx:glitch");
+    await new Promise((resolve) => setTimeout(resolve, 220));
+  }
 
   // Capture the monitor and the current head position before focus changes:
   // the compositor may re-home a pinned window when focus moves.
@@ -588,7 +674,7 @@ async function applyMode(next) {
 
   // Resize/position first, then hand the renderer the mode and side together:
   // separate events can paint one frame of the old vertical layout.
-  await applyWindowGeometry(mode, monitor);
+  await applyWindowGeometry(mode, monitor, { preserveY: true });
   win.webContents.send("mode:changed", { mode, side: chatSide });
 }
 
@@ -1313,6 +1399,9 @@ function registerIpc() {
     material: avatarMaterial(),
     accent: state.accent ?? currentThemeAccent(),
   }));
+  ipcMain.on("window:drag-start", () => beginDrag());
+  ipcMain.on("window:drag-move", () => dragTo());
+  ipcMain.on("window:drag-end", () => void endDrag());
   ipcMain.handle("app:set-mode", (_event, next) => {
     applyMode(next === "interactive" ? "interactive" : "passive");
     return mode;

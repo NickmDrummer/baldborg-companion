@@ -12,9 +12,9 @@ o.window("^baldborg-desktop$", {
 })
 
 -- Placement is a separate rule so it is evaluated after `float` is in effect.
--- Fixed 380x460 surface: the app never grows or resizes the window.
+-- Tight 208x222 idle frame; the app grows sideways to 568x222 for chat.
 o.window("^baldborg-desktop$", {
-  move = { "(monitor_w-380-24)", "(monitor_h-460-24)" },
+  move = { "(monitor_w-208-8)", "(monitor_h-222-8)" },
 })
 
 -- These keys belong to Baldborg now: SUPER+SHIFT+D was Docker and
