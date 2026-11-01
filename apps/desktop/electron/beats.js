@@ -510,6 +510,15 @@ export function noteInteraction() {
 }
 
 /**
+ * One-off announcement (Epic, future calendar hooks). It uses the same delivery
+ * path as beats but does not consume the daily cap. Mute still wins.
+ */
+export function announceBeat(text, id = "announcement", mood = "pleased") {
+  if (isMuted()) return null;
+  return deliver(text, id, mood, "announcement", false);
+}
+
+/**
  * Force a beat for testing: bypasses every gate, including cooldowns.
  * Falls back to the beats that always make sense if the context-specific ones
  * do not apply right now.

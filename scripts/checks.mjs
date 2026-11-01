@@ -16,6 +16,12 @@ import {
   parseCurrencyQuery,
   parseIcsEvents,
 } from "../apps/desktop/electron/tools.js";
+import {
+  epicBeatText,
+  epicTitles,
+  newEpicTitles,
+  nextEpicCheck,
+} from "../apps/desktop/electron/epic.js";
 import { detectLanguage } from "../apps/desktop/electron/voice.js";
 import {
   parseBeatInterval,
@@ -257,4 +263,34 @@ test("ics parser reads all-day and recurring events", () => {
   const standups = events.filter((event) => event.title === "Standup");
   assert.ok(standups.length >= 4);
   assert.ok(standups.every((event) => event.start.getDay() === 4));
+});
+
+test("Epic checks jump to the next Thursday at 13:05", () => {
+  const wednesday = new Date(2026, 10, 4, 12, 0, 0); // Wed 4 Nov 2026
+  const next = nextEpicCheck(wednesday);
+  assert.equal(next.getDay(), 4);
+  assert.equal(next.getHours(), 13);
+  assert.equal(next.getMinutes(), 5);
+  assert.ok(next > wednesday);
+
+  const thursdayBefore = new Date(2026, 10, 5, 12, 0, 0);
+  assert.equal(nextEpicCheck(thursdayBefore).getDate(), 5);
+
+  const thursdayAfter = new Date(2026, 10, 5, 14, 0, 0);
+  assert.equal(nextEpicCheck(thursdayAfter).getDate(), 12);
+});
+
+test("Epic title diff only reports new games", () => {
+  const current = epicTitles([{ title: "B" }, { title: "A" }, { title: "A" }]);
+  assert.deepEqual(current, ["A", "B"]);
+  assert.deepEqual(newEpicTitles(["A"], current), ["B"]);
+  assert.deepEqual(newEpicTitles(["A", "B"], current), []);
+  assert.equal(
+    epicBeatText(["A", "B"], "es"),
+    "Nuevos juegos gratis en Epic: A, B.",
+  );
+  assert.equal(
+    epicBeatText(["A", "B"], "en"),
+    "New free games on Epic: A, B.",
+  );
 });

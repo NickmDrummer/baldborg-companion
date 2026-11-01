@@ -44,6 +44,7 @@ import {
   parseSilentHours,
   parseToggle,
 } from "./commands.js";
+import { startEpicWatch, stopEpicWatch } from "./epic.js";
 import {
   forgetFact,
   listFacts,
@@ -148,10 +149,21 @@ function avatarMaterial() {
   }
 }
 
+// Closed frame. When the chat opens it grows sideways to SIDE_WIDTH so the
+// console can sit next to the head instead of pushing the head down.
+const WINDOW_HEIGHT = 460;
+const HEAD_BOX = 200;
+const CONSOLE_BOX = 340;
+const SIDE_GAP = 12;
+const SIDE_MARGIN = 8;
+const SIDE_WIDTH = SIDE_MARGIN * 2 + HEAD_BOX + SIDE_GAP + CONSOLE_BOX; // 568
+const HEAD_CENTER_STACKED = 190;
+const HEAD_CENTER_RIGHT = SIDE_MARGIN + HEAD_BOX / 2; // 108
+const HEAD_CENTER_LEFT = SIDE_WIDTH - SIDE_MARGIN - HEAD_BOX / 2; // 460
 const SIZES = {
-  // Fixed frame: the chat appears inside the same 380x460 surface.
-  passive: { width: 380, height: 460 },
-  interactive: { width: 380, height: 460 },
+  passive: { width: 380, height: WINDOW_HEIGHT },
+  stacked: { width: 380, height: WINDOW_HEIGHT },
+  side: { width: SIDE_WIDTH, height: WINDOW_HEIGHT },
 };
 /** Gap between the overlay and the monitor edge, in px. */
 const EDGE_MARGIN = 24;
@@ -168,6 +180,10 @@ const DEFAULT_STATE = {
 let win = null;
 let state = loadState();
 let mode = "passive";
+let chatSide = "stacked";
+let headAnchorX = null;
+let applyingGeometry = false;
+let geometryTimer = null;
 let lastMood = "neutral";
 let warming = false;
 
@@ -285,6 +301,7 @@ function monitorForClient(client) {
  * does not match the expected bottom-right corner.
  */
 async function ensurePlacement() {
+  if (mode !== "passive") return;
   const client = hyprlandClient();
   if (!client?.at) return;
   const monitor = monitorForClient(client);
@@ -342,53 +359,111 @@ function focusPreviousOnWorkspace(workspace = activeWorkspaceId()) {
   if (address) hyprDispatch(`hl.dsp.focus({ window = "address:${address}" })`);
 }
 
+/** Screen X of the head centre for the current layout. */
+function headCenterForClient(client, side = chatSide) {
+  if (!client?.at || !client?.size) return null;
+  if (side === "left") return client.at[0] + HEAD_CENTER_LEFT;
+  if (side === "right") return client.at[0] + HEAD_CENTER_RIGHT;
+  return client.at[0] + client.size[0] / 2;
+}
+
 /**
- * Resize the surface for the current mode. The width never changes and the
- * window is anchored to the bottom-right of its monitor, so the console grows
- * below the head without any horizontal reflow. Hyprland's move dispatcher
- * takes global coordinates; local ones would send secondary monitors back to
- * the primary output.
+ * Pick the side with room for the console. The head centre stays fixed; the
+ * console opens towards the half of the screen with more free space. If
+ * neither side can fit, keep the vertical layout.
+ */
+function chooseChatSide(headCenterX, monitor) {
+  if (!monitor || headCenterX == null) return "stacked";
+  const leftFits = headCenterX - HEAD_CENTER_LEFT >= monitor.x + EDGE_MARGIN;
+  const rightFits =
+    headCenterX - HEAD_CENTER_RIGHT + SIDE_WIDTH <= monitor.x + monitor.width - EDGE_MARGIN;
+  if (!leftFits && !rightFits) return "stacked";
+  if (leftFits && rightFits) {
+    const monitorCenter = monitor.x + monitor.width / 2;
+    return headCenterX <= monitorCenter ? "right" : "left";
+  }
+  return rightFits ? "right" : "left";
+}
+
+function geometryFor(next, monitor, client) {
+  const interactive = next === "interactive";
+  const fallbackCenter =
+    headAnchorX ?? (client?.at ? client.at[0] + (client.size?.[0] ?? SIZES.passive.width) / 2 : null);
+  const center = fallbackCenter ?? (monitor ? monitor.x + monitor.width / 2 : 0);
+  const side = interactive ? chooseChatSide(center, monitor) : "stacked";
+  const width = interactive && side !== "stacked" ? SIDE_WIDTH : SIZES.passive.width;
+  const offset =
+    side === "right" ? HEAD_CENTER_RIGHT : side === "left" ? HEAD_CENTER_LEFT : HEAD_CENTER_STACKED;
+  const idealX = center - offset;
+  const minX = (monitor?.x ?? 0) + EDGE_MARGIN;
+  const maxX = (monitor?.x ?? 0) + (monitor?.width ?? width) - width - EDGE_MARGIN;
+  const x = Math.max(minX, Math.min(idealX, maxX));
+  const y = (monitor?.y ?? 0) + (monitor?.height ?? WINDOW_HEIGHT) - WINDOW_HEIGHT - EDGE_MARGIN;
+  return { side, width, height: WINDOW_HEIGHT, x, y, center: x + offset };
+}
+
+/**
+ * Resize and place the surface. The head keeps its screen position; opening
+ * the chat only changes the window width and which side the console uses.
+ * Hyprland's move dispatcher takes global coordinates.
  */
 async function applyWindowGeometry(next, monitorOverride = null) {
-  const size = SIZES[next] ?? SIZES.passive;
   const client = hyprlandClient();
   const monitor = monitorOverride ?? monitorForClient(client);
-  if (!monitor) return;
+  if (!monitor) return chatSide;
 
-  const expectedX = monitor.x + monitor.width - size.width - EDGE_MARGIN;
-  const expectedY = monitor.y + monitor.height - size.height - EDGE_MARGIN;
+  const geometry = geometryFor(next, monitor, client);
+  chatSide = geometry.side;
+  headAnchorX = geometry.center;
+  win?.webContents.send("layout:changed", chatSide);
 
-  // Already in the right place and size: skip the focus dance.
-  if (
-    client?.size?.[0] === size.width &&
-    client?.size?.[1] === size.height &&
-    Math.abs(client.at[0] - expectedX) < 8 &&
-    Math.abs(client.at[1] - expectedY) < 8
-  ) {
-    return;
+  const already =
+    client?.size?.[0] === geometry.width &&
+    client?.size?.[1] === geometry.height &&
+    Math.abs(client.at[0] - geometry.x) < 8 &&
+    Math.abs(client.at[1] - geometry.y) < 8;
+  if (already) return chatSide;
+
+  applyingGeometry = true;
+  try {
+    // Ask Chromium too, for compositors that honour client resize requests.
+    win?.setSize(geometry.width, geometry.height);
+
+    const workspace = activeWorkspaceId();
+
+    // move/resize act on the active window; allow focus just for this.
+    await setOverlayFocusable(true);
+    await focusOverlay();
+    await hyprDispatch(`hl.dsp.window.resize({ x = ${geometry.width}, y = ${geometry.height} })`);
+
+    if (mode === "passive") {
+      await setOverlayFocusable(false);
+      focusPreviousOnWorkspace(workspace);
+    }
+
+    // Target the window explicitly: after focus changes Hyprland can re-home a
+    // pinned window to the primary monitor.
+    await hyprDispatch(
+      `hl.dsp.window.move({ x = ${geometry.x}, y = ${geometry.y}, window = "class:${WM_CLASS}" })`,
+    );
+  } finally {
+    applyingGeometry = false;
   }
+  return chatSide;
+}
 
-  // Ask Chromium too, for compositors that honour client resize requests.
-  win?.setSize(size.width, size.height);
-
-  const workspace = activeWorkspaceId();
-
-  // move/resize act on the active window; allow focus just for this.
-  await setOverlayFocusable(true);
-  await focusOverlay();
-  await hyprDispatch(`hl.dsp.window.resize({ x = ${size.width}, y = ${size.height} })`);
-
-  if (mode === "passive") {
-    await setOverlayFocusable(false);
-    focusPreviousOnWorkspace(workspace);
+/** Re-pick the side after a drag, but only if the side actually changes. */
+async function refreshChatSide() {
+  if (mode !== "interactive" || applyingGeometry) return;
+  const client = hyprlandClient();
+  if (!client?.at) return;
+  const monitor = monitorForClient(client);
+  const center = headCenterForClient(client, chatSide);
+  if (center == null) return;
+  headAnchorX = center;
+  if (chooseChatSide(center, monitor) !== chatSide) {
+    await applyWindowGeometry("interactive", monitor);
   }
-
-  // Target the window explicitly: after focus changes Hyprland can re-home a
-  // pinned window to the primary monitor. The dispatcher uses global
-  // coordinates, so this also moves it to the captured output.
-  await hyprDispatch(
-    `hl.dsp.window.move({ x = ${expectedX}, y = ${expectedY}, window = "class:${WM_CLASS}" })`,
-  );
 }
 
 /** On restart the overlay starts on workspace 1 of the focused output. */
@@ -417,6 +492,7 @@ function startBeatScheduler() {
     isMuted: () => state.muted,
     getMode: () => mode,
   });
+  startEpicWatch();
   beatsRunning = true;
 }
 
@@ -469,6 +545,13 @@ function createWindow() {
   // Keep the chat input focused whenever the compositor focuses the window.
   win.on("focus", () => win?.webContents.send("window:focus"));
 
+  // After a drag, flip the console to the side with more room.
+  win.on("move", () => {
+    if (mode !== "interactive" || applyingGeometry) return;
+    if (geometryTimer) clearTimeout(geometryTimer);
+    geometryTimer = setTimeout(() => void refreshChatSide(), 300);
+  });
+
   try {
     if (configSummary().beatsEnabled) startBeatScheduler();
   } catch {
@@ -516,9 +599,12 @@ async function applyMode(next) {
   mode = next === "interactive" ? "interactive" : "passive";
   if (!win) return;
 
-  // Capture the monitor before focus changes: the compositor may re-home a
-  // pinned window when focus moves to another output.
-  const monitor = monitorForClient(hyprlandClient());
+  // Capture the monitor and the current head position before focus changes:
+  // the compositor may re-home a pinned window when focus moves.
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+  const center = headCenterForClient(client, chatSide);
+  if (center != null) headAnchorX = center;
 
   if (mode === "passive") {
     // Capture the workspace before touching focus: Hyprland may switch away
@@ -887,6 +973,7 @@ function runAppCommand(raw) {
       if (next && !beatsRunning) startBeatScheduler();
       if (!next && beatsRunning) {
         stopBeats();
+        stopEpicWatch();
         beatsRunning = false;
       }
       return {
@@ -1241,6 +1328,7 @@ function startControlServer() {
 function registerIpc() {
   ipcMain.handle("app:get-state", () => ({
     mode,
+    layout: chatSide,
     muted: state.muted,
     autoSpeak: autoSpeakEnabled(),
     language: (() => {
@@ -1357,6 +1445,7 @@ if (!gotLock) {
 
   app.on("will-quit", () => {
     stopBeats();
+    stopEpicWatch();
     beatsRunning = false;
     stopVoice();
     restoreNoWarps();

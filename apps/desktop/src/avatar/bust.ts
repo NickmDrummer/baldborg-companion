@@ -135,6 +135,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
     const material = eyeMaterial.clone();
     material.uniforms.uOpen.value = 1;
     material.uniforms.uColor.value = new THREE.Color("#ff2a1e");
+    material.uniforms.uHasIris.value = 1;
     const eye = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     eye.scale.set(dims.x * 0.19, dims.y * 0.03, 1);
     const eyeX = side * dims.x * 0.17;
@@ -163,8 +164,9 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
 
   const mouthMaterial = createFeatureMaterial();
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
+  mouthMaterial.uniforms.uMouth.value = 1;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(dims.x * 0.15, dims.y * 0.055, 1);
+  mouth.scale.set(dims.x * 0.15, dims.y * 0.075, 1);
   mouth.position.set(0, -dims.y * 0.28, FORWARD * surfaceZ(0, -dims.y * 0.28, dims.z * 0.34));
   mouth.renderOrder = 2;
   group.add(mouth);
@@ -357,8 +359,10 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       uGlitch: { value: 0 },
       uTime: { value: 0 },
       uVisibility: { value: 1 },
+      uHasIris: { value: 0 },
+      uMouth: { value: 0 },
       uColor: { value: new THREE.Color("#ff2a1e") },
-      uIdle: { value: new THREE.Color("#d6f4ff") },
+      uIdle: { value: new THREE.Color("#000000") },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -371,6 +375,8 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
       varying vec2 vUv;
       uniform vec3 uColor;
       uniform vec3 uIdle;
+      uniform float uHasIris;
+      uniform float uMouth;
       uniform float uOpen;
       uniform float uBlink;
       uniform float uGlitch;
@@ -406,12 +412,27 @@ function createFeatureMaterial(): THREE.ShaderMaterial {
         float halo = smoothstep(0.35, 0.0, d) * 0.18;
         float alpha = clamp(core + halo, 0.0, 1.0) * uVisibility;
 
-        // Red signal that tears into black slices while speaking.
-        float tearing = clamp(uGlitch * 1.6, 0.0, 1.0);
-        vec3 base = mix(uIdle, uColor, tearing);
-        vec3 hidden = vec3(0.02, 0.0, 0.0);
-        vec3 color = mix(base, hidden, gate * tearing);
-        color = mix(color, vec3(1.0, 0.22, 0.12), step(0.88, rowHash) * tearing * 0.9);
+        // Black at rest; red and black tearing while speaking.
+        float tearing = clamp(uGlitch * 2.0, 0.0, 1.0);
+        // The mouth turns red as soon as it opens; the eyes stay black until
+        // the speaking glitch reaches them.
+        float mouthRed = uMouth * smoothstep(0.13, 0.25, uOpen);
+        vec3 base = mix(uIdle, uColor, max(tearing, mouthRed));
+        vec3 hidden = vec3(0.0);
+        // Keep enough red visible between the black tears.
+        vec3 color = mix(base, hidden, gate * tearing * 0.55);
+        color = mix(color, uColor, step(0.88, rowHash) * tearing * 0.9);
+
+        // A small dark-red iris with a black pupil; it survives the tearing,
+        // so the eyes still read as eyes while the signal breaks apart.
+        if (uHasIris > 0.5) {
+          vec2 irisP = vec2(p.x * 2.4, p.y);
+          float irisD = length(irisP);
+          float iris = smoothstep(0.40, 0.34, irisD);
+          float pupil = smoothstep(0.18, 0.13, irisD);
+          color = mix(color, uColor, iris);
+          color = mix(color, vec3(0.0), pupil);
+        }
         gl_FragColor = vec4(color, alpha);
       }
     `,

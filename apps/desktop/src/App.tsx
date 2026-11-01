@@ -7,6 +7,7 @@ import { createSpeaker, type EffectsPreset } from "./voice/speaker";
 import { TOOL_LABELS, ui, type UiLanguage } from "./i18n";
 
 type Mode = "passive" | "interactive";
+type ChatSide = "left" | "right" | "stacked";
 type Role = "user" | "assistant" | "error";
 
 interface ChatEntry {
@@ -57,6 +58,7 @@ interface ListenState {
 interface BaldborgApi {
   getState: () => Promise<{
     mode: Mode;
+    layout?: ChatSide;
     muted: boolean;
     autoSpeak?: boolean;
     effects?: EffectsPreset;
@@ -88,6 +90,7 @@ interface BaldborgApi {
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
   onEffects: (callback: (value: EffectsPreset) => void) => () => void;
   onLanguage: (callback: (value: UiLanguage) => void) => () => void;
+  onLayout: (callback: (side: ChatSide) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
@@ -155,6 +158,7 @@ export default function App() {
   const [beat, setBeat] = useState<{ text: string; mood: Mood } | null>(null);
   const [listenPhase, setListenPhase] = useState<ListenPhase | null>(null);
   const [language, setLanguage] = useState<UiLanguage>("es");
+  const [chatSide, setChatSide] = useState<ChatSide>("stacked");
   const beatTimer = useRef<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -196,6 +200,7 @@ export default function App() {
   useEffect(() => {
     api?.getState().then((state) => {
       setMode(state.mode);
+      if (state.layout) setChatSide(state.layout);
       setMuted(state.muted);
       autoSpeakRef.current = state.autoSpeak ?? true;
       if (state.language) setLanguage(state.language);
@@ -229,6 +234,7 @@ export default function App() {
     const offMaterial = api?.onMaterial((value) => setMaterial(value));
     const offEffects = api?.onEffects((value) => speaker.current?.setEffects(value));
     const offLanguage = api?.onLanguage((value) => setLanguage(value));
+    const offLayout = api?.onLayout((side) => setChatSide(side));
 
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
@@ -370,6 +376,7 @@ export default function App() {
       offMaterial?.();
       offEffects?.();
       offLanguage?.();
+      offLayout?.();
       offReplay?.();
       offGlitch?.();
       offBeat?.();
@@ -483,7 +490,11 @@ export default function App() {
   };
 
   return (
-    <div className={`stage ${mode}${locked ? " locked" : ""}`}>
+    <div
+      className={`stage ${mode}${mode === "interactive" ? ` side-${chatSide}` : ""}${
+        locked ? " locked" : ""
+      }`}
+    >
       <div className="head" aria-hidden="true">
         <Avatar key={material} mood={mood} material={material} />
       </div>

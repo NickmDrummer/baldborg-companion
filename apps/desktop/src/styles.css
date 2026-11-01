@@ -39,6 +39,42 @@ body,
   pointer-events: auto;
 }
 
+/* Chat beside the head. The window itself grows to 568x460; the head keeps
+   its centre, so the console opens towards the side with more room. */
+.stage.interactive.side-right,
+.stage.interactive.side-left {
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px;
+}
+
+.stage.interactive.side-left {
+  flex-direction: row-reverse;
+}
+
+.stage.interactive.side-right .head,
+.stage.interactive.side-left .head {
+  align-self: flex-start;
+  flex: 0 0 auto;
+}
+
+.stage.interactive.side-right .console,
+.stage.interactive.side-left .console {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 340px;
+  height: auto;
+}
+
+.stage.interactive.side-right .transcript,
+.stage.interactive.side-left .transcript {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
 /* Screen locked: the projection powers down. */
 .stage.locked .head {
   opacity: 0.32;
