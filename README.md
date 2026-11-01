@@ -18,7 +18,7 @@ TTS.
 
 [![Watch the Baldborg demo](assets/screenshots/chat.png)](assets/demo/baldborg-demo.mp4)
 
-[Open the demo video directly](assets/demo/baldborg-demo.mp4) (MP4, ~4 MB).
+https://github.com/user-attachments/assets/985483a7-b87d-4cac-bf73-74ebaf646b2b
 
 ## Requirements
 
