@@ -425,7 +425,9 @@ async function applyWindowGeometry(next, monitorOverride = null) {
     // move/resize act on the active window; allow focus just for this.
     await setOverlayFocusable(true);
     await focusOverlay();
-    await hyprDispatch(`hl.dsp.window.resize({ x = ${geometry.width}, y = ${geometry.height} })`);
+    await hyprDispatch(
+      `hl.dsp.window.resize({ x = ${geometry.width}, y = ${geometry.height}, window = "class:${WM_CLASS}" })`,
+    );
 
     if (mode === "passive") {
       await setOverlayFocusable(false);
