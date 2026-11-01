@@ -1010,6 +1010,12 @@ export async function startTask(kind, text, target, sink, language = "es") {
   const model = config.model;
   const task = kind === "correct" ? "correct" : "translate";
   const destination = target === "en" ? "English" : "Spanish";
+  const spokenLanguage =
+    task === "correct"
+      ? detectLanguage(text)
+      : target === "en"
+        ? "en"
+        : "es";
 
   const system =
     task === "translate"
@@ -1029,7 +1035,7 @@ export async function startTask(kind, text, target, sink, language = "es") {
     const result = await chatRound(messages, model, sink, false);
     const clean = result.text.trim();
     if (!clean) throw new Error("empty task result");
-    sink({ type: "done", mood: "neutral", text: clean, model: "task" });
+    sink({ type: "done", mood: "neutral", text: clean, model: "task", lang: spokenLanguage });
   } catch (error) {
     if (error.name === "AbortError") {
       sink({ type: "done", mood: "neutral", text: "", cancelled: true });

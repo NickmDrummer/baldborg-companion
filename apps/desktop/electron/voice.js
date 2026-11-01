@@ -233,9 +233,12 @@ export function autoSpeakEnabled() {
   return voiceConfig().autoSpeak !== false;
 }
 
-export async function synthesize(text) {
+export async function synthesize(text, languageOverride) {
   const config = voiceConfig();
-  const lang = selectedVoiceLanguage();
+  const lang =
+    languageOverride === "en" || languageOverride === "es"
+      ? languageOverride
+      : selectedVoiceLanguage();
   const voice = config[lang] ?? config.es;
 
   if (config.provider === "azure") {

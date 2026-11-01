@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld("baldborg", {
   setMode: (mode) => ipcRenderer.invoke("app:set-mode", mode),
   quit: () => ipcRenderer.invoke("app:quit"),
 
-  speak: (text) => ipcRenderer.invoke("voice:speak", text),
+  speak: (text, lang) => ipcRenderer.invoke("voice:speak", text, lang),
   voiceStatus: () => ipcRenderer.invoke("voice:status"),
   sendMessage: (text) => ipcRenderer.invoke("brain:chat", text),
   runTask: (kind, text, target) => ipcRenderer.invoke("brain:task", kind, text, target),

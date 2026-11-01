@@ -143,7 +143,8 @@ does not switch voices; use `/language es|en` to change both the interface and
 the voice.
 
 `/voice on|off` controls the chat voice only. Beats are independent and keep
-their own `/beats on|off` switch.
+their own `/beats on|off` switch. `/translate` speaks with the target language's
+voice, and `/correct` speaks with the language of the corrected text.
 
 ## Tools and commands
 

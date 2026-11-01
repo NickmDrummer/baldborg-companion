@@ -37,6 +37,7 @@ interface BrainEvent {
   status?: "running" | "done";
   id?: string;
   summary?: string;
+  lang?: UiLanguage;
 }
 
 interface BeatEvent {
@@ -72,7 +73,7 @@ interface BaldborgApi {
   runTask: (kind: "translate" | "correct", text: string, target?: "es" | "en") => Promise<void>;
   cancelChat: () => Promise<void>;
   confirmTool: (id: string, accepted: boolean) => Promise<boolean>;
-  speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
+  speak: (text: string, lang?: UiLanguage) => Promise<{ wav: Uint8Array; lang: string } | null>;
   onGlitch: (callback: () => void) => () => void;
   onWindowFocus: (callback: () => void) => () => void;
   onAccent: (callback: (color: string) => void) => () => void;
@@ -174,9 +175,9 @@ export default function App() {
     document.documentElement.lang = language;
   }, [language]);
 
-  const speakText = async (text: string) => {
+  const speakText = async (text: string, lang?: UiLanguage) => {
     if (!text) return;
-    const result = await api?.speak(text);
+    const result = await api?.speak(text, lang);
     if (!result) return;
     const bytes = new Uint8Array(result.wav);
     await speaker.current?.speak(bytes.buffer);
@@ -343,7 +344,7 @@ export default function App() {
         );
 
         if (!event.cancelled && event.text && autoSpeakRef.current) {
-          void speakText(event.text);
+          void speakText(event.text, event.lang);
         }
         return;
       }

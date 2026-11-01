@@ -1507,9 +1507,9 @@ function registerIpc() {
   ipcMain.handle("tools:confirm", (_event, id, accepted) => confirmAction(id, accepted));
   ipcMain.handle("brain:history", () => getHistory());
 
-  ipcMain.handle("voice:speak", async (_event, text) => {
+  ipcMain.handle("voice:speak", async (_event, text, lang) => {
     if (typeof text !== "string" || !text.trim()) return null;
-    const result = await synthesize(text.trim());
+    const result = await synthesize(text.trim(), lang);
     return result ? { wav: result.wav, lang: result.lang } : null;
   });
   ipcMain.handle("voice:status", () => voiceStatus());
