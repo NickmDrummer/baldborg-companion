@@ -16,7 +16,9 @@ TTS.
 
 ![Baldborg bar widget](assets/screenshots/widget.png)
 
-[Watch the short demo video](assets/demo/baldborg-demo.mp4) (MP4, ~4 MB).
+<video src="https://raw.githubusercontent.com/NickmDrummer/baldborg-companion/main/assets/demo/baldborg-demo.mp4" controls width="100%" poster="https://raw.githubusercontent.com/NickmDrummer/baldborg-companion/main/assets/screenshots/chat.png"></video>
+
+[Open the demo video directly](assets/demo/baldborg-demo.mp4) (MP4, ~4 MB).
 
 ## Requirements
 
