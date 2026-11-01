@@ -38,11 +38,6 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("language:changed", listener);
     return () => ipcRenderer.removeListener("language:changed", listener);
   },
-  onLayout: (callback) => {
-    const listener = (_event, side) => callback(side);
-    ipcRenderer.on("layout:changed", listener);
-    return () => ipcRenderer.removeListener("layout:changed", listener);
-  },
   onEffects: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("voice:effects", listener);

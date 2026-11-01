@@ -180,8 +180,6 @@ let state = loadState();
 let mode = "passive";
 let chatSide = "stacked";
 let headAnchorX = null;
-let applyingGeometry = false;
-let geometryTimer = null;
 let lastMood = "neutral";
 let warming = false;
 
@@ -406,7 +404,6 @@ async function applyWindowGeometry(next, monitorOverride = null) {
   const geometry = geometryFor(next, monitor, client);
   chatSide = geometry.side;
   headAnchorX = geometry.center;
-  win?.webContents.send("layout:changed", chatSide);
 
   const already =
     client?.size?.[0] === geometry.width &&
@@ -415,48 +412,29 @@ async function applyWindowGeometry(next, monitorOverride = null) {
     Math.abs(client.at[1] - geometry.y) < 8;
   if (already) return chatSide;
 
-  applyingGeometry = true;
-  try {
-    // Ask Chromium too, for compositors that honour client resize requests.
-    win?.setSize(geometry.width, geometry.height);
+  // Ask Chromium too, for compositors that honour client resize requests.
+  win?.setSize(geometry.width, geometry.height);
 
-    const workspace = activeWorkspaceId();
+  const workspace = activeWorkspaceId();
 
-    // move/resize act on the active window; allow focus just for this.
-    await setOverlayFocusable(true);
-    await focusOverlay();
-    await hyprDispatch(
-      `hl.dsp.window.resize({ x = ${geometry.width}, y = ${geometry.height}, window = "class:${WM_CLASS}" })`,
-    );
+  // move/resize act on the active window; allow focus just for this.
+  await setOverlayFocusable(true);
+  await focusOverlay();
+  await hyprDispatch(
+    `hl.dsp.window.resize({ x = ${geometry.width}, y = ${geometry.height}, window = "class:${WM_CLASS}" })`,
+  );
 
-    if (mode === "passive") {
-      await setOverlayFocusable(false);
-      focusPreviousOnWorkspace(workspace);
-    }
-
-    // Target the window explicitly: after focus changes Hyprland can re-home a
-    // pinned window to the primary monitor.
-    await hyprDispatch(
-      `hl.dsp.window.move({ x = ${geometry.x}, y = ${geometry.y}, window = "class:${WM_CLASS}" })`,
-    );
-  } finally {
-    applyingGeometry = false;
+  if (mode === "passive") {
+    await setOverlayFocusable(false);
+    focusPreviousOnWorkspace(workspace);
   }
+
+  // Target the window explicitly: after focus changes Hyprland can re-home a
+  // pinned window to the primary monitor.
+  await hyprDispatch(
+    `hl.dsp.window.move({ x = ${geometry.x}, y = ${geometry.y}, window = "class:${WM_CLASS}" })`,
+  );
   return chatSide;
-}
-
-/** Re-pick the side after a drag, but only if the side actually changes. */
-async function refreshChatSide() {
-  if (mode !== "interactive" || applyingGeometry) return;
-  const client = hyprlandClient();
-  if (!client?.at) return;
-  const monitor = monitorForClient(client);
-  const center = headCenterForClient(client, chatSide);
-  if (center == null) return;
-  headAnchorX = center;
-  if (chooseChatSide(center, monitor) !== chatSide) {
-    await applyWindowGeometry("interactive", monitor);
-  }
 }
 
 /** On restart the overlay starts on workspace 1 of the focused output. */
@@ -537,13 +515,6 @@ function createWindow() {
 
   // Keep the chat input focused whenever the compositor focuses the window.
   win.on("focus", () => win?.webContents.send("window:focus"));
-
-  // After a drag, flip the console to the side with more room.
-  win.on("move", () => {
-    if (mode !== "interactive" || applyingGeometry) return;
-    if (geometryTimer) clearTimeout(geometryTimer);
-    geometryTimer = setTimeout(() => void refreshChatSide(), 300);
-  });
 
   try {
     if (configSummary().beatsEnabled) startBeatScheduler();

@@ -90,7 +90,6 @@ interface BaldborgApi {
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
   onEffects: (callback: (value: EffectsPreset) => void) => () => void;
   onLanguage: (callback: (value: UiLanguage) => void) => () => void;
-  onLayout: (callback: (side: ChatSide) => void) => () => void;
   onBrainEvent: (callback: (event: BrainEvent) => void) => () => void;
 }
 
@@ -235,7 +234,6 @@ export default function App() {
     const offMaterial = api?.onMaterial((value) => setMaterial(value));
     const offEffects = api?.onEffects((value) => speaker.current?.setEffects(value));
     const offLanguage = api?.onLanguage((value) => setLanguage(value));
-    const offLayout = api?.onLayout((side) => setChatSide(side));
 
     const offWindowFocus = api?.onWindowFocus(() => {
       if (modeRef.current === "interactive") inputRef.current?.focus();
@@ -377,7 +375,6 @@ export default function App() {
       offMaterial?.();
       offEffects?.();
       offLanguage?.();
-      offLayout?.();
       offReplay?.();
       offGlitch?.();
       offBeat?.();
@@ -492,9 +489,9 @@ export default function App() {
 
   return (
     <div
-      className={`stage ${mode}${mode === "interactive" ? ` side-${chatSide}` : ""}${
-        locked ? " locked" : ""
-      }`}
+      className={`stage ${mode}${
+        mode === "interactive" ? ` side-${chatSide === "stacked" ? "right" : chatSide}` : ""
+      }${locked ? " locked" : ""}`}
     >
       <div className="head" aria-hidden="true">
         <Avatar key={material} mood={mood} material={material} />
