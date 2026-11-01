@@ -13,7 +13,7 @@
  *           doctor (read-only health check)
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -29,11 +29,20 @@ if (command === "doctor") {
   });
   process.exit(result.status ?? 1);
 }
+if (command === "start") {
+  const child = spawn(join(ROOT, "bin", "baldborg-start"), [], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  process.exit(0);
+}
 const payload = ["announce", "language", "listen"].includes(command)
   ? `${command} ${rest.join(" ").trim()}`
   : command;
 
 const VALID = new Set([
+  "start",
   "toggle",
   "open",
   "close",

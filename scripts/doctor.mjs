@@ -292,7 +292,7 @@ async function main() {
           `${status.listening ? "escuchando" : "micrófono inactivo"}`,
       );
     } else {
-      warn("Socket presente pero sin respuesta", "reinicia la app con bin/baldborg quit/start");
+      warn("Socket presente pero sin respuesta", "reinicia la app con bin/baldborg quit y bin/baldborg start");
     }
   } else {
     warn("Overlay no está corriendo", "arráncalo con bin/baldborg-start");
