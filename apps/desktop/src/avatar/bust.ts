@@ -36,16 +36,25 @@ const MODEL_URL = new URL("models/head.glb", document.baseURI).href;
 /** Fraction of the bust height kept from the top (0.52 = head + jaw). */
 const HEAD_CUT = 0.46;
 
-/** Drop triangles that sit entirely below `y` (neck and shoulders). */
-function clipBelow(source: THREE.BufferGeometry, y: number): THREE.BufferGeometry {
+/**
+ * Drop triangles that sit entirely below `y` (neck and shoulders). The source
+ * index of every kept triangle is returned so later passes can still map the
+ * clipped mesh back to the original topology.
+ */
+function clipBelow(
+  source: THREE.BufferGeometry,
+  y: number,
+): { geometry: THREE.BufferGeometry; triangles: number[] } {
   const position = source.attributes.position;
   const kept: number[] = [];
+  const triangles: number[] = [];
 
   for (let i = 0; i < position.count; i += 3) {
     const y0 = position.getY(i);
     const y1 = position.getY(i + 1);
     const y2 = position.getY(i + 2);
     if (y0 < y && y1 < y && y2 < y) continue;
+    triangles.push(i / 3);
     for (const index of [i, i + 1, i + 2]) {
       kept.push(position.getX(index), position.getY(index), position.getZ(index));
     }
@@ -54,7 +63,7 @@ function clipBelow(source: THREE.BufferGeometry, y: number): THREE.BufferGeometr
   const clipped = new THREE.BufferGeometry();
   clipped.setAttribute("position", new THREE.Float32BufferAttribute(kept, 3));
   clipped.computeVertexNormals();
-  return clipped;
+  return { geometry: clipped, triangles };
 }
 
 function findMesh(root: THREE.Object3D): THREE.Mesh | null {
@@ -67,6 +76,85 @@ function findMesh(root: THREE.Object3D): THREE.Mesh | null {
   return found;
 }
 
+/** Connected component of every source triangle, following the shared index. */
+function triangleComponents(mesh: THREE.Mesh): Int32Array {
+  const source = mesh.geometry;
+  const index = source.getIndex();
+  const count = index ? index.count / 3 : source.attributes.position.count / 3;
+  const parent = new Int32Array(count);
+  for (let i = 0; i < count; i++) parent[i] = i;
+
+  const find = (value: number): number => {
+    while (parent[value] !== value) {
+      parent[value] = parent[parent[value]];
+      value = parent[value];
+    }
+    return value;
+  };
+  const union = (a: number, b: number) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootA] = rootB;
+  };
+
+  const first = new Map<number, number>();
+  for (let triangle = 0; triangle < count; triangle++) {
+    for (let corner = 0; corner < 3; corner++) {
+      const vertex = index ? index.getX(triangle * 3 + corner) : triangle * 3 + corner;
+      const seen = first.get(vertex);
+      if (seen === undefined) first.set(vertex, triangle);
+      else union(seen, triangle);
+    }
+  }
+
+  const roots = new Int32Array(count);
+  for (let triangle = 0; triangle < count; triangle++) roots[triangle] = find(triangle);
+  return roots;
+}
+
+/**
+ * The scan ships the inside of the mouth as separate shells behind the face.
+ * The opaque material hides them through the depth buffer, but the translucent
+ * hologram lets their rim show through as a bright rectangle around the mouth.
+ * Drop every shell in the lower face and keep the head and the eyes.
+ */
+function dropMouthShells(
+  geometry: THREE.BufferGeometry,
+  triangles: number[],
+  roots: Int32Array,
+  height: number,
+): THREE.BufferGeometry {
+  const position = geometry.attributes.position;
+  const top = new Map<number, number>();
+
+  for (let triangle = 0; triangle < triangles.length; triangle++) {
+    const root = roots[triangles[triangle]];
+    const highest = Math.max(
+      position.getY(triangle * 3),
+      position.getY(triangle * 3 + 1),
+      position.getY(triangle * 3 + 2),
+    );
+    top.set(root, Math.max(top.get(root) ?? -Infinity, highest));
+  }
+
+  // The mouth shells are the only components that end below this line; the
+  // head reaches the top of the bust and the eyes sit above it.
+  const limit = -height * 0.11;
+  const kept: number[] = [];
+  for (let triangle = 0; triangle < triangles.length; triangle++) {
+    if ((top.get(roots[triangles[triangle]]) ?? -Infinity) < limit) continue;
+    for (let corner = 0; corner < 3; corner++) {
+      const vertex = triangle * 3 + corner;
+      kept.push(position.getX(vertex), position.getY(vertex), position.getZ(vertex));
+    }
+  }
+
+  const cleaned = new THREE.BufferGeometry();
+  cleaned.setAttribute("position", new THREE.Float32BufferAttribute(kept, 3));
+  cleaned.computeVertexNormals();
+  return cleaned;
+}
+
 export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadRig> {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(MODEL_URL);
@@ -76,13 +164,15 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
 
   // The scan is a bust (head, neck and shoulders); keep only the head.
   mesh.updateWorldMatrix(true, false);
+  const roots = triangleComponents(mesh);
   let geometry = mesh.geometry.toNonIndexed();
   geometry.applyMatrix4(mesh.matrixWorld);
   geometry.computeBoundingBox();
 
   const full = geometry.boundingBox!;
   const cutY = full.min.y + (full.max.y - full.min.y) * HEAD_CUT;
-  geometry = clipBelow(geometry, cutY);
+  const clipped = clipBelow(geometry, cutY);
+  geometry = clipped.geometry;
   geometry.computeBoundingBox();
 
   const box = geometry.boundingBox!;
@@ -95,9 +185,9 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   geometry.translate(-centre.x, -centre.y, -centre.z);
   const scale = HEAD_WIDTH / size.x;
   geometry.scale(scale, scale, scale);
-  geometry.computeVertexNormals();
 
   const dims = size.clone().multiplyScalar(scale);
+  geometry = dropMouthShells(geometry, clipped.triangles, roots, dims.y);
   // Cut plane in the final (centred, scaled) local space; the shader discards
   // the triangles that poke below it so the neck edge is a clean line.
   const cutLocal = (cutY - centre.y) * scale;
