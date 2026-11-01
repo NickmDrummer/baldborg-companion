@@ -513,8 +513,8 @@ export default function App() {
           <div className="beat">{beat.text}</div>
         ) : (
           <div className="statusline">
-            <span className="dot" />
             <span className="pill-grip" aria-hidden="true">⠿</span>
+            <span className="dot" />
             BALDBORG ·{" "}
             {muted ? t.muted : busy ? t.processing : warming ? t.warming : t.idle}
           </div>
