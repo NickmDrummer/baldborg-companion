@@ -102,7 +102,7 @@ test("slash commands keep arguments with spaces", () => {
     command: "/club",
     argument: "Bayern Munich",
   });
-  assert.deepEqual(parseCommand("  /MUTE off "), { command: "/mute", argument: "off" });
+  assert.deepEqual(parseCommand("  /BEATS off "), { command: "/beats", argument: "off" });
   assert.deepEqual(parseCommand("/help"), { command: "/help", argument: "" });
 });
 

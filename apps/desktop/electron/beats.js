@@ -494,7 +494,8 @@ export function noteInteraction() {
 
 /**
  * One-off announcement (Epic, future calendar hooks). It uses the same delivery
- * path as beats but does not consume the daily cap. Mute still wins.
+ * path as beats but does not consume the daily cap, and it is independent of
+ * the chat voice switch.
  */
 export function announceBeat(text, id = "announcement", mood = "pleased") {
   return deliver(text, id, mood, "announcement", false);

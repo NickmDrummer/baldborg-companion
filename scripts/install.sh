@@ -50,7 +50,7 @@ Start it now:      $ROOT/bin/baldborg-start
 Or log out and back in: it is registered with o.launch_on_start.
 Local model:      see README.md > Local model (Baldborg does not bundle one).
 
-Bindings: Super+Shift+D toggle · M mute · R replay · H hide
+Bindings: Super+Shift+D toggle · M voice on/off · H hide
           Super+Shift+V hold to talk
 Logs:     $LOG_FILE
 EOF

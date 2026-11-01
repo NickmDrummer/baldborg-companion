@@ -104,4 +104,4 @@ hyprctl reload >/dev/null
 echo "config errors:"
 hyprctl configerrors
 echo
-echo "Done. Bindings: Super+Shift+D toggle, Super+Shift+M mute, Super+Shift+H hide."
+echo "Done. Bindings: Super+Shift+D toggle, Super+Shift+M voice on/off, Super+Shift+H hide."
