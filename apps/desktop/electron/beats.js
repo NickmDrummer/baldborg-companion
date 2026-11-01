@@ -48,8 +48,16 @@ let startedAt = Date.now();
 let send = () => {};
 let getMode = () => "passive";
 
+/** The old activity beat quoted the active window title; drop those lines. */
+function withoutTabTitles(lines) {
+  return (Array.isArray(lines) ? lines : []).filter(
+    (line) => !/^(I see|Veo)\s+["«]/.test(String(line)),
+  );
+}
+
 function loadState() {
   try {
+    const saved = JSON.parse(readFileSync(STATE_FILE, "utf8"));
     return {
       day: "",
       count: 0,
@@ -60,7 +68,8 @@ function loadState() {
       beatLanguage: null,
       lastLanguage: null,
       recentBeats: [],
-      ...JSON.parse(readFileSync(STATE_FILE, "utf8")),
+      ...saved,
+      recentBeats: withoutTabTitles(saved.recentBeats),
     };
   } catch {
     return {
@@ -152,20 +161,6 @@ export function noteLanguage(code) {
   if (state.lastLanguage === normalised) return;
   state.lastLanguage = normalised;
   saveState();
-}
-
-function activeWindow() {
-  try {
-    const raw = execFileSync("hyprctl", ["activewindow", "-j"], { timeout: 1500 }).toString();
-    const window = JSON.parse(raw);
-    if (!window?.class || window.class === "baldborg-desktop") return null;
-    return {
-      class: String(window.class).slice(0, 80),
-      title: String(window.title ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
-    };
-  } catch {
-    return null;
-  }
 }
 
 function mprisProperty(service, property) {
@@ -260,11 +255,10 @@ function packagesUpdating() {
 }
 
 function currentActivity() {
-  const window = activeWindow();
   const media = mediaStatus();
   const updating = packagesUpdating();
-  if (!window && !media && !updating) return null;
-  return { window, media, updating };
+  if (!media && !updating) return null;
+  return { media, updating };
 }
 
 function buildContext(language) {
@@ -411,12 +405,8 @@ function mentionsActivity(text, activity) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  const tokens = ["music", "musica", "cancion", "song", "listen", "escuch", "terminal", "ventana", "window", "browser", "navegador", "update", "actualiz", "paquete", "package"];
+  const tokens = ["music", "musica", "cancion", "song", "listen", "escuch", "update", "actualiz", "paquete", "package"];
   if (activity.media) tokens.push(...activity.media.toLowerCase().split(/[^a-z0-9]+/));
-  if (activity.window) {
-    tokens.push(...String(activity.window.title ?? "").toLowerCase().split(/[^a-z0-9]+/));
-    tokens.push(...String(activity.window.class ?? "").toLowerCase().split(/[^a-z0-9]+/));
-  }
   return tokens.some((token) => token.length >= 3 && sample.includes(token));
 }
 

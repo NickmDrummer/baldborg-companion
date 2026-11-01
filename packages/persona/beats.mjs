@@ -31,12 +31,6 @@ function activitySeed(ctx, english) {
       ? `${ctx.activity.media} is playing. Is the music for you or for the keyboard?`
       : `Suena ${ctx.activity.media}. ¿La música es para usted o para el teclado?`;
   }
-  if (ctx.activity?.window) {
-    const window = ctx.activity.window.title || ctx.activity.window.class;
-    return english
-      ? `I see "${window}". What am I supposed to conclude?`
-      : `Veo «${window}». ¿Qué se supone que debo concluir?`;
-  }
   return "";
 }
 
@@ -202,7 +196,7 @@ export const BEATS = [
     weight: 4,
     cooldownHours: 0.75,
     mood: "wry",
-    when: (ctx) => Boolean(ctx.activity),
+    when: (ctx) => Boolean(ctx.activity?.media || ctx.activity?.updating),
     text: (ctx) => activitySeed(ctx, false),
     textEn: (ctx) => activitySeed(ctx, true),
   },

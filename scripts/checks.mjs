@@ -34,6 +34,7 @@ import {
   parseToggle,
 } from "../apps/desktop/electron/commands.js";
 import { nextIntervalMinutes } from "../apps/desktop/electron/beats.js";
+import { BEATS } from "../packages/persona/beats.mjs";
 import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
 import {
   normaliseKey,
@@ -86,6 +87,14 @@ test("short ambiguous messages follow the interface language", () => {
   assert.equal(detectLanguage("tell something", "en"), "en");
   assert.equal(detectLanguage("tell something", "es"), "es");
   assert.equal(detectLanguage("dime algo", "es"), "es");
+});
+
+test("activity beats ignore browser tab titles", () => {
+  const activity = BEATS.find((beat) => beat.id === "activity");
+  const tab = { activity: { window: { title: "A very long browser tab", class: "firefox" } } };
+  assert.equal(activity.when(tab), false);
+  assert.equal(activity.textEn(tab), "");
+  assert.equal(activity.when({ activity: { media: "Song — Artist" } }), true);
 });
 
 test("slash commands keep arguments with spaces", () => {
