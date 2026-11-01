@@ -24,9 +24,9 @@ export default {
   prepare() {
     return {
       requiresConfirmation: true,
-      summary: "¿Inicio una copia de seguridad ahora?",
+      summary: "Run the backup now?",
       async run() {
-        return { ok: true, summary: "Copia iniciada." };
+        return { ok: true, summary: "Backup started." };
       },
     };
   },
@@ -42,5 +42,6 @@ Rules:
   trust.
 - If a tool fails to load, Baldborg logs it and continues without it.
 
-Built-ins: `get_weather`, `set_reminder`, `get_time`, `system_status`,
-`team_fixtures`.
+Built-ins: `get_weather`, `team_fixtures`, `get_time`, `system_status`,
+`convert_units`, `get_exchange_rate`, `calendar_events`, `epic_free_games`,
+`steam_free_games`, `set_reminder`, `list_reminders`.
