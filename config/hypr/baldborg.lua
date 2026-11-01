@@ -51,4 +51,4 @@ hl.bind("SUPER + mouse:272", function()
   end
 end, { mouse = true })
 hl.bind("SUPER + mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true })
-hl.bind("mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true })
+hl.bind("mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true, non_consuming = true })
