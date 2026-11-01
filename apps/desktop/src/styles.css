@@ -176,6 +176,7 @@ body,
 }
 
 .pill-grip {
+  margin-left: 1px;
   color: var(--holo-dim);
   font-size: 9px;
   letter-spacing: -1px;

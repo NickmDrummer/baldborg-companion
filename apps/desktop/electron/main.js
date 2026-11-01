@@ -446,6 +446,18 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+function monitorAtPoint(x, y) {
+  return (
+    hyprlandMonitors().find(
+      (monitor) =>
+        x >= monitor.x &&
+        x < monitor.x + monitor.width &&
+        y >= monitor.y &&
+        y < monitor.y + monitor.height,
+    ) ?? null
+  );
+}
+
 function cursorPosition() {
   try {
     const [x, y] = execFileSync("hyprctl", ["cursorpos"], { timeout: 1000 })
@@ -490,10 +502,11 @@ function dragTo() {
 
   const pointer = cursorPosition();
   if (!pointer) return;
-  const minX = drag.monitor.x + EDGE_MARGIN;
-  const maxX = drag.monitor.x + drag.monitor.width - drag.width - EDGE_MARGIN;
-  const minY = drag.monitor.y + EDGE_MARGIN;
-  const maxY = drag.monitor.y + drag.monitor.height - drag.height - EDGE_MARGIN;
+  const monitor = monitorAtPoint(pointer.x, pointer.y) ?? drag.monitor;
+  const minX = monitor.x + EDGE_MARGIN;
+  const maxX = monitor.x + monitor.width - drag.width - EDGE_MARGIN;
+  const minY = monitor.y + EDGE_MARGIN;
+  const maxY = monitor.y + monitor.height - drag.height - EDGE_MARGIN;
   const x = clamp(drag.originX + pointer.x - drag.pointerX, minX, maxX);
   const y = clamp(drag.originY + pointer.y - drag.pointerY, minY, maxY);
   if (x === drag.lastX && y === drag.lastY) return;
@@ -511,9 +524,30 @@ function insideRect(pointer, x, y, width, height) {
   );
 }
 
+/** Keep the overlay inside the monitor it ended up on. */
+function clampOverlay() {
+  const client = hyprlandClient();
+  const monitor = monitorForClient(client);
+  if (!client?.at || !client.size || !monitor) return;
+  const x = clamp(
+    client.at[0],
+    monitor.x + EDGE_MARGIN,
+    monitor.x + monitor.width - client.size[0] - EDGE_MARGIN,
+  );
+  const y = clamp(
+    client.at[1],
+    monitor.y + EDGE_MARGIN,
+    monitor.y + monitor.height - client.size[1] - EDGE_MARGIN,
+  );
+  if (x === client.at[0] && y === client.at[1]) return;
+  void hyprDispatch(
+    `hl.dsp.window.move({ x = ${x}, y = ${y}, window = "class:${WM_CLASS}" })`,
+  );
+}
+
 /**
- * Super + LMB on the idle pill. If the pointer is not over the overlay, fall
- * back to Hyprland's normal window drag.
+ * Super + LMB on the idle pill starts an app-controlled drag. It follows the
+ * global cursor, so it can cross monitors; the release hook stops it.
  */
 function beginPillDrag() {
   const pointer = cursorPosition();
@@ -523,8 +557,6 @@ function beginPillDrag() {
     return;
   }
 
-  const monitor = monitorForClient(client);
-  if (!monitor) return;
   const insideOverlay = insideRect(
     pointer,
     client.at[0],
@@ -545,11 +577,12 @@ function beginPillDrag() {
     );
 
   if (!insidePill) {
-    // Do not steal Super+LMB from the rest of the desktop.
     if (!insideOverlay) void hyprDispatch(`hl.dsp.window.drag()`);
     return;
   }
 
+  const monitor = monitorForClient(client);
+  if (!monitor) return;
   if (pillDragTimer) clearInterval(pillDragTimer);
   drag = {
     source: "pill",
@@ -570,7 +603,10 @@ function beginPillDrag() {
 function endPillDrag() {
   if (pillDragTimer) clearInterval(pillDragTimer);
   pillDragTimer = null;
-  if (drag?.source === "pill") drag = null;
+  if (drag?.source === "pill") {
+    drag = null;
+    clampOverlay();
+  }
 }
 
 /** Finish a drag and re-pick the side if the head crossed the monitor centre. */
