@@ -124,8 +124,12 @@ export function selectedVoiceLanguage() {
   }
 }
 
-/** Cheap language guess for chat routing and STT, not for voice selection. */
-export function detectLanguage(text) {
+/**
+ * Cheap language guess for chat routing and STT, not for voice selection.
+ * Short messages often carry no stop words ("tell something"), so a tie falls
+ * back to the interface language instead of always guessing Spanish.
+ */
+export function detectLanguage(text, fallback = "es") {
   const sample = text.toLowerCase();
   // Accents are strong evidence for Spanish and cheap to check.
   const accent = /[ñáéíóúü¿¡]/.test(sample) ? 2 : 0;
@@ -139,7 +143,9 @@ export function detectLanguage(text) {
       /\b(the|a|an|and|or|of|to|in|on|at|for|with|without|you|your|is|are|was|were|be|been|do|does|did|can|could|will|would|should|have|has|had|this|that|these|those|it|its|i|my|me|we|our|they|their|he|she|his|her|what|when|where|why|how|which|who|not|no|yes|please|thanks|hello|hi|sir|remind|reminder|weather|time|team|match|play|plays|next|last|score|result|today|tomorrow)\b/g,
     ) ?? []
   ).length;
-  return es + accent >= en ? "es" : "en";
+  const spanish = es + accent;
+  if (spanish === en) return fallback === "en" ? "en" : "es";
+  return spanish > en ? "es" : "en";
 }
 
 async function isHealthy() {

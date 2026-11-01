@@ -816,7 +816,7 @@ function registerHotkeys() {
 
 /** Single entry point for typed and spoken messages. */
 function runChat(text, language) {
-  const detected = language ?? detectLanguage(text);
+  const detected = language ?? detectLanguage(text, interfaceLanguage());
   noteInteraction();
   noteLanguage(detected);
   startChat(

@@ -82,6 +82,12 @@ test("language detection handles short English and Spanish messages", () => {
   assert.equal(detectLanguage("fútbol"), "es");
 });
 
+test("short ambiguous messages follow the interface language", () => {
+  assert.equal(detectLanguage("tell something", "en"), "en");
+  assert.equal(detectLanguage("tell something", "es"), "es");
+  assert.equal(detectLanguage("dime algo", "es"), "es");
+});
+
 test("slash commands keep arguments with spaces", () => {
   assert.deepEqual(parseCommand("/club Bayern Munich"), {
     command: "/club",
