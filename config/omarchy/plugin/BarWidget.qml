@@ -23,11 +23,11 @@ BarWidget {
     if (root.spanish) {
       return root.phase === "offline"
         ? "Baldborg no está en marcha"
-        : (root.phase === "muted" ? "Baldborg · voz silenciada" : "Baldborg · clic para abrir")
+        : (root.phase === "muted" ? "Baldborg · voz desactivada" : "Baldborg · clic para abrir")
     }
     return root.phase === "offline"
       ? "Baldborg is not running"
-      : (root.phase === "muted" ? "Baldborg · voice muted" : "Baldborg · click to open")
+      : (root.phase === "muted" ? "Baldborg · voice off" : "Baldborg · click to open")
   }
 
   // The installer substitutes __REPO__ with the checkout location.
@@ -127,12 +127,12 @@ BarWidget {
           width: parent.width
           leftAlign: true
           text: root.phase === "muted"
-            ? (root.spanish ? "Activar voz" : "Unmute voice")
-            : (root.spanish ? "Silenciar voz" : "Mute voice")
+            ? (root.spanish ? "Activar voz" : "Voice on")
+            : (root.spanish ? "Desactivar voz" : "Voice off")
           foreground: root.bar.foreground
           onClicked: {
             root.menuOpen = false
-            actionProc.fire(["mute"])
+            actionProc.fire(["voice-toggle"])
           }
         }
 

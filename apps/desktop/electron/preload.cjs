@@ -46,11 +46,6 @@ contextBridge.exposeInMainWorld("baldborg", {
     ipcRenderer.on("voice:effects", listener);
     return () => ipcRenderer.removeListener("voice:effects", listener);
   },
-  onMutedChanged: (callback) => {
-    const listener = (_event, muted) => callback(muted);
-    ipcRenderer.on("audio:muted", listener);
-    return () => ipcRenderer.removeListener("audio:muted", listener);
-  },
   onLocked: (callback) => {
     const listener = (_event, locked) => callback(locked);
     ipcRenderer.on("session:locked", listener);
@@ -85,11 +80,6 @@ contextBridge.exposeInMainWorld("baldborg", {
     const listener = () => callback();
     ipcRenderer.on("fx:glitch", listener);
     return () => ipcRenderer.removeListener("fx:glitch", listener);
-  },
-  onVoiceReplay: (callback) => {
-    const listener = () => callback();
-    ipcRenderer.on("voice:replay", listener);
-    return () => ipcRenderer.removeListener("voice:replay", listener);
   },
   onBrainEvent: (callback) => {
     const listener = (_event, event) => callback(event);

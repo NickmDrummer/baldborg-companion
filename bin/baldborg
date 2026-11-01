@@ -7,10 +7,10 @@
  * owns the keybindings and calls this script instead:
  *
  *   bind = SUPER SHIFT, D, exec, /path/to/BaldborgCompanion/bin/baldborg toggle
- *   bind = SUPER SHIFT, M, exec, /path/to/BaldborgCompanion/bin/baldborg mute
+ *   bind = SUPER SHIFT, M, exec, /path/to/BaldborgCompanion/bin/baldborg voice-toggle
  *
- * Commands: toggle | open | close | mute | show | hide | quit | listen start|stop
- *           doctor (read-only health check)
+ * Commands: toggle | open | close | voice-toggle | show | hide | quit | start
+ *           listen start|stop | doctor (read-only health check)
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -46,9 +46,8 @@ const VALID = new Set([
   "toggle",
   "open",
   "close",
-  "mute",
+  "voice-toggle",
   "forget",
-  "speak",
   "glitch",
   "beat",
   "theme",

@@ -58,7 +58,6 @@ import {
   AZURE_VOICES,
   setAutoSpeak,
   setAvatarMaterial,
-  setAzureVoice,
   setBeatsEnabled,
   setBeatsEvery,
   setSilentHours,
@@ -171,9 +170,7 @@ const STATE_DIR = join(homedir(), ".config", "baldborg");
 const STATE_FILE = join(STATE_DIR, "state.json");
 const CONTROL_SOCKET = join(STATE_DIR, "control.sock");
 
-const DEFAULT_STATE = {
-  muted: false,
-};
+const DEFAULT_STATE = {};
 
 /** @type {BrowserWindow | null} */
 let win = null;
@@ -648,7 +645,6 @@ let beatsRunning = false;
 function startBeatScheduler() {
   startBeats({
     send: (event) => win?.webContents.send("beat:event", event),
-    isMuted: () => state.muted,
     getMode: () => mode,
   });
   startEpicWatch();
@@ -793,9 +789,14 @@ function toggleMode() {
   applyMode(mode === "passive" ? "interactive" : "passive");
 }
 
-function setMuted(muted) {
-  saveState({ muted });
-  win?.webContents.send("audio:muted", muted);
+function setVoiceOutput(enabled) {
+  setAutoSpeak(Boolean(enabled));
+  win?.webContents.send("voice:autoSpeak", Boolean(enabled));
+  return Boolean(enabled);
+}
+
+function toggleVoiceOutput() {
+  return setVoiceOutput(!autoSpeakEnabled());
 }
 
 /* --------------------------------------------------------------- hotkeys -- */
@@ -805,7 +806,7 @@ function setMuted(muted) {
 function registerHotkeys() {
   try {
     globalShortcut.register("Super+Alt+D", toggleMode);
-    globalShortcut.register("Super+Alt+M", () => setMuted(!state.muted));
+    globalShortcut.register("Super+Alt+M", () => toggleVoiceOutput());
   } catch (error) {
     console.info("[baldborg] globalShortcut unavailable (Wayland):", error.message);
   }
@@ -897,9 +898,7 @@ function statusMessage() {
   const paused =
     b.mode === "interactive"
       ? en ? "chat open" : "chat abierto"
-      : b.muted
-        ? en ? "voice muted" : "voz silenciada"
-        : silentNow
+      : silentNow
           ? en ? "silent hours" : "horas silenciosas"
           : b.count >= b.dailyCap
             ? en ? "daily cap" : "tope diario"
@@ -908,8 +907,8 @@ function statusMessage() {
 
   return [
     en
-      ? `Mode: ${mode} · ${state.muted ? "muted" : "voice active"} · ${isBusy() ? "busy" : "free"} · microphone ${isListening() ? "active" : "inactive"}`
-      : `Modo: ${mode} · ${state.muted ? "silenciado" : "voz activa"} · ${isBusy() ? "ocupado" : "libre"} · micrófono ${isListening() ? "activo" : "inactivo"}`,
+      ? `Mode: ${mode} · ${autoSpeakEnabled() ? "voice active" : "voice off"} · ${isBusy() ? "busy" : "free"} · microphone ${isListening() ? "active" : "inactive"}`
+      : `Modo: ${mode} · ${autoSpeakEnabled() ? "voz activa" : "voz desactivada"} · ${isBusy() ? "ocupado" : "libre"} · micrófono ${isListening() ? "activo" : "inactivo"}`, 
     en
       ? `Beats: ${b.running ? "active" : "stopped"} · ${cadence} · silent ${silent} · today ${b.count}/${b.dailyCap}${next}${pause}${blocked}`
       : `Beats: ${b.running ? "activos" : "detenidos"} · ${cadence} · silencio ${silent} · hoy ${b.count}/${b.dailyCap}${next}${pause}${blocked}`,
@@ -924,7 +923,6 @@ function localizeBlockReason(reason, english) {
   return (
     {
       "beats desactivados": "beats disabled",
-      "voz silenciada": "voice muted",
       "chat abierto": "chat open",
       "horas silenciosas": "silent hours",
       "sesión bloqueada": "session locked",
@@ -955,17 +953,15 @@ function runAppCommand(raw) {
               "Commands:",
               "/config — show every setting",
               "/status — companion and model status",
-              "/mute [on|off] — mute or enable the voice",
-              "/voice [on|off] — persistent automatic speech",
+              "/voice [on|off] — chat voice output",
               "/voice provider kokoro|azure — TTS provider",
               "/voice fx clean|radio|corrupt — audio effect",
-              "/voice es|en <alias> — Azure voice per language",
               "/voice list — available voices",
               "/beats [on|off] — start or stop beats",
               "/beats every <min>|random — fixed or random cadence",
               "/beats silent <start>-<end>|off — silent window",
               "/avatar normal|hologram — avatar material",
-              "/language es|en — UI and beat language",
+              "/language es|en — UI, beats and voice language",
               "/club <team> — favourite football team",
               "/city <city> — default weather city",
               "/remember key = value — store a fact",
@@ -980,17 +976,15 @@ function runAppCommand(raw) {
               "Comandos:",
               "/config — ver todos los ajustes",
               "/status — estado del companion y del modelo",
-              "/mute [on|off] — silenciar o activar la voz",
-              "/voice [on|off] — voz automática persistente",
+              "/voice [on|off] — salida de voz del chat",
               "/voice provider kokoro|azure — proveedor de voz",
               "/voice fx clean|radio|corrupt — efecto de audio",
-              "/voice es|en <alias> — voz de Azure por idioma",
               "/voice list — voces disponibles",
               "/beats [on|off] — activar o detener los beats",
               "/beats every <min>|random — frecuencia fija o aleatoria",
               "/beats silent <inicio>-<fin>|off — horas sin beats",
               "/avatar normal|hologram — material del avatar",
-              "/language es|en — idioma de la UI y los beats",
+              "/language es|en — idioma de la interfaz, los beats y la voz",
               "/club <equipo> — cambiar el equipo favorito",
               "/city <ciudad> — cambiar la ciudad del clima",
               "/remember clave = valor — guardar un hecho",
@@ -1008,22 +1002,6 @@ function runAppCommand(raw) {
 
     case "/status":
       return { ok: true, message: statusMessage() };
-
-    case "/mute": {
-      const next = parseToggle(argument, state.muted);
-      if (next === null) return { ok: false, message: en ? "Usage: /mute [on|off]" : "Uso: /mute [on|off]" };
-      setMuted(next);
-      return {
-        ok: true,
-        message: en
-          ? next ? "Voice muted, sir." : "Voice enabled, sir."
-          : next ? "Voz silenciada, señor." : "Voz activada, señor.",
-      };
-    }
-
-    case "/unmute":
-      setMuted(false);
-      return { ok: true, message: en ? "Voice enabled, sir." : "Voz activada, señor." };
 
     case "/voice": {
       const value = argument.toLowerCase();
@@ -1043,19 +1021,6 @@ function runAppCommand(raw) {
           ? [`Spanish: ${Object.keys(AZURE_VOICES.es).join(", ")}`, `English: ${Object.keys(AZURE_VOICES.en).join(", ")}`]
           : [`Español: ${Object.keys(AZURE_VOICES.es).join(", ")}`, `Inglés: ${Object.keys(AZURE_VOICES.en).join(", ")}`];
         return { ok: true, message: en ? `Azure voices:\n${lines.join("\n")}` : `Voces de Azure:\n${lines.join("\n")}` };
-      }
-
-      const voiceMatch = value.match(/^(es|en)\s+([a-z]+)$/);
-      if (voiceMatch) {
-        try {
-          const chosen = setAzureVoice(voiceMatch[1], voiceMatch[2]);
-          return {
-            ok: true,
-            message: en ? `Voice ${chosen.lang}: ${chosen.voice}.` : `Voz ${chosen.lang}: ${chosen.voice}.`,
-          };
-        } catch (error) {
-          return { ok: false, message: en ? `Could not change the voice: ${error.message}` : `No pude cambiar la voz: ${error.message}` };
-        }
       }
 
       const providerMatch = value.match(/^(?:provider\s+)?(kokoro|azure)$/);
@@ -1190,8 +1155,6 @@ function runAppCommand(raw) {
       };
 
     case "/clean-history":
-    case "/forget":
-    case "/reset":
       if (isBusy()) cancelChat();
       resetHistory();
       return {
@@ -1359,8 +1322,8 @@ function handleCommand(raw) {
     case "close":
       applyMode("passive");
       break;
-    case "mute":
-      setMuted(!state.muted);
+    case "voice-toggle":
+      toggleVoiceOutput();
       break;
     case "drag-start":
       beginPillDrag();
@@ -1371,9 +1334,6 @@ function handleCommand(raw) {
     case "forget":
       resetHistory();
       win?.webContents.send("brain:event", { type: "reset" });
-      break;
-    case "speak":
-      win?.webContents.send("voice:replay");
       break;
     case "glitch":
       win?.webContents.send("fx:glitch");
@@ -1462,7 +1422,7 @@ function startControlServer() {
         connection.end(
           JSON.stringify({
             mode,
-            muted: state.muted,
+            muted: !autoSpeakEnabled(),
             busy: isBusy(),
             warming,
             listening: isListening(),
@@ -1496,7 +1456,7 @@ function registerIpc() {
   ipcMain.handle("app:get-state", () => ({
     mode,
     layout: chatSide,
-    muted: state.muted,
+    muted: !autoSpeakEnabled(),
     autoSpeak: autoSpeakEnabled(),
     language: (() => {
       try {
@@ -1548,7 +1508,7 @@ function registerIpc() {
   ipcMain.handle("brain:history", () => getHistory());
 
   ipcMain.handle("voice:speak", async (_event, text) => {
-    if (state.muted || typeof text !== "string" || !text.trim()) return null;
+    if (typeof text !== "string" || !text.trim()) return null;
     const result = await synthesize(text.trim());
     return result ? { wav: result.wav, lang: result.lang } : null;
   });

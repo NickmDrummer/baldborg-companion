@@ -104,8 +104,7 @@ It is registered to start with the session. Logs go to
 | Action | Binding |
 | --- | --- |
 | Open/close chat | `Super+Shift+D` |
-| Mute/unmute voice | `Super+Shift+M` |
-| Replay last reply | `Super+Shift+R` |
+| Toggle chat voice | `Super+Shift+M` |
 | Hide overlay | `Super+Shift+H` |
 | Push-to-talk (hold) | `Super+Shift+V` |
 | Move idle overlay | `Super+Shift` + drag the status pill |
@@ -143,6 +142,9 @@ Spanish uses the Spanish voice. The language of an individual chat message
 does not switch voices; use `/language es|en` to change both the interface and
 the voice.
 
+`/voice on|off` controls the chat voice only. Beats are independent and keep
+their own `/beats on|off` switch.
+
 ## Tools and commands
 
 Built-in tools:
@@ -168,6 +170,9 @@ Common commands:
 /config
 /status
 /voice [on|off]
+/voice provider kokoro|azure
+/voice fx clean|radio|corrupt
+/voice list
 /beats [on|off]
 /language es|en
 /translate [es|en] <text>

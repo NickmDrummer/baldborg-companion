@@ -19,8 +19,7 @@ Bindings created by the file:
 | Binding | Action |
 | --- | --- |
 | `Super+Shift+D` | Toggle interactive mode |
-| `Super+Shift+M` | Mute / unmute voice |
-| `Super+Shift+R` | Replay the last reply |
+| `Super+Shift+M` | Toggle chat voice |
 | `Super+Shift+H` | Hide the overlay |
 | `Super+Shift + left drag` on the pill | Move the idle overlay across monitors, clamped on release |
 
@@ -71,9 +70,9 @@ Wayland forbids application-level global hotkeys, so Electron's
 instead and calls `bin/baldborg`, which speaks to the app over a UNIX socket at
 `~/.config/baldborg/control.sock`.
 
-Available commands: `toggle`, `open`, `close`, `mute`, `forget`, `speak`,
+Available commands: `toggle`, `open`, `close`, `voice-toggle`, `forget`,
 `beat`, `theme`, `announce "<text>"`, `glitch`, `show`, `hide`, `quit`,
-`capture` (writes `/tmp/opencode/baldborg-capture.png`, useful for
+`start`, `capture` (writes `/tmp/opencode/baldborg-capture.png`, useful for
 debugging the renderer).
 
 ## Pointer warping

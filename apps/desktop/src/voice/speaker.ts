@@ -13,7 +13,6 @@ export type EffectsPreset = "clean" | "radio" | "corrupt";
 export interface Speaker {
   speak: (wav: ArrayBuffer) => Promise<void>;
   stop: () => void;
-  setMuted: (muted: boolean) => void;
   setEffects: (preset: EffectsPreset) => void;
   isSpeaking: () => boolean;
 }
@@ -112,7 +111,6 @@ export function createSpeaker(preset: EffectsPreset = "radio"): Speaker {
   let source: AudioBufferSourceNode | null = null;
   let extraSources: AudioBufferSourceNode[] = [];
   let frame = 0;
-  let muted = false;
   let currentPreset: EffectsPreset = preset;
 
   let input: GainNode | null = null;
@@ -251,7 +249,6 @@ export function createSpeaker(preset: EffectsPreset = "radio"): Speaker {
   }
 
   async function speak(wav: ArrayBuffer) {
-    if (muted) return;
     stop();
     const ctx = ensureContext();
     const buffer = await ctx.decodeAudioData(wav.slice(0));
@@ -306,10 +303,6 @@ export function createSpeaker(preset: EffectsPreset = "radio"): Speaker {
   return {
     speak,
     stop,
-    setMuted(value: boolean) {
-      muted = value;
-      if (muted) stop();
-    },
     setEffects(value: EffectsPreset) {
       currentPreset = PRESETS[value] ? value : "radio";
       applyPreset();

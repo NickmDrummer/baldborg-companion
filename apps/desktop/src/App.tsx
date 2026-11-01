@@ -73,7 +73,6 @@ interface BaldborgApi {
   cancelChat: () => Promise<void>;
   confirmTool: (id: string, accepted: boolean) => Promise<boolean>;
   speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
-  onVoiceReplay: (callback: () => void) => () => void;
   onGlitch: (callback: () => void) => () => void;
   onWindowFocus: (callback: () => void) => () => void;
   onAccent: (callback: (color: string) => void) => () => void;
@@ -88,7 +87,6 @@ interface BaldborgApi {
   dragTo: () => void;
   endDrag: () => void;
   onModeChanged: (callback: (mode: Mode, side?: ChatSide) => void) => () => void;
-  onMutedChanged: (callback: (muted: boolean) => void) => () => void;
   onAutoSpeak: (callback: (value: boolean) => void) => () => void;
   onMaterial: (callback: (value: HeadMaterial) => void) => () => void;
   onEffects: (callback: (value: EffectsPreset) => void) => () => void;
@@ -168,9 +166,7 @@ export default function App() {
   const dragging = useRef(false);
   const streamingId = useRef<number | null>(null);
   const speaker = useRef<ReturnType<typeof createSpeaker> | null>(null);
-  const mutedRef = useRef(false);
   const autoSpeakRef = useRef(true);
-  const lastReply = useRef("");
   const modeRef = useRef<Mode>("passive");
   const t = ui(language);
 
@@ -179,7 +175,7 @@ export default function App() {
   }, [language]);
 
   const speakText = async (text: string) => {
-    if (mutedRef.current || !text) return;
+    if (!text) return;
     const result = await api?.speak(text);
     if (!result) return;
     const bytes = new Uint8Array(result.wav);
@@ -194,11 +190,6 @@ export default function App() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
-
-  useEffect(() => {
-    mutedRef.current = muted;
-    speaker.current?.setMuted(muted);
-  }, [muted]);
 
   useEffect(() => {
     api?.getState().then((state) => {
@@ -231,9 +222,9 @@ export default function App() {
         speaker.current?.stop();
       }
     });
-    const offMuted = api?.onMutedChanged(setMuted);
     const offAutoSpeak = api?.onAutoSpeak((value) => {
       autoSpeakRef.current = value;
+      setMuted(!value);
     });
     const offMaterial = api?.onMaterial((value) => setMaterial(value));
     const offEffects = api?.onEffects((value) => speaker.current?.setEffects(value));
@@ -248,7 +239,7 @@ export default function App() {
 
     const offBeat = api?.onBeat((event) => {
       setMood(event.mood);
-      if (event.speak && !mutedRef.current) void speakText(event.text);
+      if (event.speak) void speakText(event.text);
 
       // With the chat open there is no bubble, so the line goes to the
       // transcript; otherwise it floats under the head.
@@ -274,9 +265,6 @@ export default function App() {
     const offGlitch = api?.onGlitch(() => {
       requestGlitch();
       requestCalm(700);
-    });
-    const offReplay = api?.onVoiceReplay(() => {
-      if (lastReply.current) void speakText(lastReply.current);
     });
 
     const offBrain = api?.onBrainEvent((event) => {
@@ -354,9 +342,8 @@ export default function App() {
             .filter((entry) => entry.role !== "assistant" || entry.text.trim().length > 0),
         );
 
-        if (!event.cancelled && event.text) {
-          lastReply.current = event.text;
-          if (autoSpeakRef.current) void speakText(event.text);
+        if (!event.cancelled && event.text && autoSpeakRef.current) {
+          void speakText(event.text);
         }
         return;
       }
@@ -377,12 +364,10 @@ export default function App() {
 
     return () => {
       offMode?.();
-      offMuted?.();
       offAutoSpeak?.();
       offMaterial?.();
       offEffects?.();
       offLanguage?.();
-      offReplay?.();
       offGlitch?.();
       offBeat?.();
       offListen?.();

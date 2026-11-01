@@ -22,14 +22,12 @@ o.window("^baldborg-desktop$", {
 hl.unbind("SUPER + SHIFT + D")
 hl.unbind("SUPER + SHIFT + H")
 hl.unbind("SUPER + SHIFT + M")
-hl.unbind("SUPER + SHIFT + R")
 hl.unbind("SUPER + SHIFT + V")
 
 local baldborg = "__REPO__/bin/baldborg"
 
 o.bind("SUPER + SHIFT + D", "Baldborg: modo interactivo", baldborg .. " toggle")
-o.bind("SUPER + SHIFT + M", "Baldborg: silenciar voz", baldborg .. " mute")
-o.bind("SUPER + SHIFT + R", "Baldborg: repetir voz", baldborg .. " speak")
+o.bind("SUPER + SHIFT + M", "Baldborg: voz on/off", baldborg .. " voice-toggle")
 
 -- Push-to-talk: record while V is held, transcribe on release.
 o.bind("SUPER + SHIFT + V", "Baldborg: hablar (mantener)", baldborg .. " listen start")

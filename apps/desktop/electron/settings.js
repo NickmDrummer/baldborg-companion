@@ -108,17 +108,6 @@ export function setVoiceProvider(value) {
   return value;
 }
 
-export function setAzureVoice(lang, alias) {
-  if (!["es", "en"].includes(lang)) throw new Error("invalid voice language");
-  const voice = AZURE_VOICES[lang]?.[alias];
-  if (!voice) throw new Error("unknown voice alias");
-  updateConfig((raw) => {
-    raw.voice = raw.voice ?? {};
-    raw.voice.azure = { ...(raw.voice.azure ?? {}), [lang]: voice };
-  });
-  return { lang, ...voice };
-}
-
 export function setVoiceEffectsPreset(value) {
   if (!VOICE_EFFECTS.has(value)) throw new Error("invalid voice effect preset");
   updateConfig((raw) => {

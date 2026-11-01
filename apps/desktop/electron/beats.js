@@ -46,7 +46,6 @@ let nextAt = null;
 let lastBlocked = null;
 let startedAt = Date.now();
 let send = () => {};
-let isMuted = () => false;
 let getMode = () => "passive";
 
 function loadState() {
@@ -341,7 +340,6 @@ function pickBeat(ctx) {
 function gateReason() {
   const cfg = config();
   if (!cfg.enabled) return "beats desactivados";
-  if (isMuted()) return "voz silenciada";
   if (getMode() === "interactive") return "chat abierto";
 
   const now = new Date();
@@ -378,7 +376,6 @@ export function beatStatus() {
     nextInMinutes: minutes,
     lastBlocked,
     mode: getMode(),
-    muted: isMuted(),
   };
 }
 
@@ -483,7 +480,6 @@ function schedule() {
 
 export function startBeats(options) {
   send = options.send ?? send;
-  isMuted = options.isMuted ?? isMuted;
   getMode = options.getMode ?? getMode;
   startedAt = Date.now();
   state.lastInteraction = Date.now();
@@ -511,7 +507,6 @@ export function noteInteraction() {
  * path as beats but does not consume the daily cap. Mute still wins.
  */
 export function announceBeat(text, id = "announcement", mood = "pleased") {
-  if (isMuted()) return null;
   return deliver(text, id, mood, "announcement", false);
 }
 
