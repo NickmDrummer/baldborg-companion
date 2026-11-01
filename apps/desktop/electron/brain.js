@@ -17,6 +17,7 @@ import {
   listPendingReminders,
   parseConversionQuery,
   parseCurrencyQuery,
+  parseReminderWhen,
   prepareTool,
   toolDefinitions,
   toolsEnabled,
@@ -96,16 +97,24 @@ function saveHistory() {
   }
 }
 
-function clockContext() {
+function clockContext(language = "en") {
   const now = new Date();
-  const time = now.toLocaleTimeString("es-MX", {
+  const locale = language === "en" ? "en-US" : "es-MX";
+  const time = now.toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
-  const day = now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+  const day = now.toLocaleDateString(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
-    `Runtime context: it is ${time} on ${day} on the client's workstation. ` +
+    `Runtime context: it is ${time} on ${day} (${zone}) on the client's workstation. ` +
+    "Use this full date, including the year, when scheduling reminders. " +
     "Weather, reminders, clock, workstation status, the client's football team, dollar and currency rates, " +
     "unit conversion, the local calendar, Epic free games and Steam free-to-keep games are available through tools. " +
     "Do not repeat phrases or closings you have already used in this conversation."
@@ -197,60 +206,47 @@ function requestConfirmation(summary, sink) {
  * Reminders are too important to depend on the model deciding to call the
  * tool: "recuérdame X en 20 minutos" is parsed here and scheduled directly.
  */
+const REMINDER_TRIGGER =
+  /\b(recu[eé]rdame|recordarme|remind me|set(?:e)? (?:me )?a reminder|set up a reminder|create a reminder|schedule a reminder|make a reminder)\b|^(?:recordatorio|reminder)\s+(?:para|de|for)\b/i;
+
 function routeReminder(raw) {
-  const TRIGGER =
-    /\b(recu[eé]rdame|recordarme|recordatorio|remind me|set(?:e)? (?:me )?a reminder|set up a reminder|create a reminder)\b/i;
-  if (!TRIGGER.test(raw)) return null;
+  if (!REMINDER_TRIGGER.test(raw)) return null;
 
-  let minutes = null;
-  let at = null;
+  const parsed = parseReminderWhen(raw);
+  if (!parsed) return null;
 
-  const inMinutes =
-    raw.match(/\ben\s+(\d{1,3})\s*(minutos?|min)\b/i) ??
-    raw.match(/\bin\s+(\d{1,3})\s*(minutes?|mins?)\b/i);
-  const inHours =
-    raw.match(/\ben\s+(\d{1,2})\s*horas?\b/i) ??
-    raw.match(/\bin\s+(\d{1,2})\s*hours?\b/i);
-  const atClock = raw.match(
-    /\b(?:a\s+las?|at)\s+(\d{1,2})[:.](\d{2})\s*(am|pm|a\.m\.|p\.m\.)?/i,
-  );
-
-  if (inMinutes) minutes = Number(inMinutes[1]);
-  else if (inHours) minutes = Number(inHours[1]) * 60;
-  if (atClock) {
-    at = `${atClock[1]}:${atClock[2]}${atClock[3] ? ` ${atClock[3]}` : ""}`;
+  let text = raw;
+  for (const span of [...parsed.spans].sort((a, b) => b.start - a.start)) {
+    text = `${text.slice(0, span.start)} ${text.slice(span.end)}`;
   }
-
-  if (minutes === null && at === null) return null;
-
-  let text = raw
-    .replace(
-      /^.*?\b(recu[eé]rdame|recordarme|remind me|set(?:e)? (?:me )?a reminder|set up a reminder|create a reminder)\b\s*/i,
-      "",
-    )
-    .replace(/\b(?:a\s+las?|at)\s+\d{1,2}[:.]\d{2}\s*(am|pm|a\.m\.|p\.m\.)?/i, "")
-    .replace(/\ben\s+\d{1,3}\s*(minutos?|min)\b/i, "")
-    .replace(/\bin\s+\d{1,3}\s*(minutes?|mins?)\b/i, "")
-    .replace(/\ben\s+\d{1,2}\s*horas?\b/i, "")
-    .replace(/\bin\s+\d{1,2}\s*hours?\b/i, "")
+  text = text
+    .replace(REMINDER_TRIGGER, "")
+    .replace(/\s+/g, " ")
     .trim()
-    .replace(/^(de|que|para|to|with|about|that|so that)\s+/i, "")
+    .replace(/^(?:de|del|el|la|que|para|por|to|with|about|that|so that|on|at|a|the|of)\s+/i, "")
+    .replace(/\s+(?:de|del|el|la|que|para|por|to|with|about|that|so that|on|at|a|the|of)$/i, "")
     .replace(/[.,;]+$/, "")
     .trim();
 
   if (!text) text = "recordatorio";
 
-  return { text, minutes, at, language: detectLanguage(raw) };
+  return { text, when: parsed.when, language: detectLanguage(raw) };
 }
 
 /** Questions about pending reminders are answered from the store, not the model. */
 function routeReminderQuery(raw) {
   if (!/(recordatorio|reminder)/i.test(raw)) return null;
-  if (/(recu[eé]rdame|recordarme|remind me|set(?:e)? (?:me )?a reminder|create a reminder)/i.test(raw)) {
+  if (REMINDER_TRIGGER.test(raw)) return null;
+  if (/\ben\s+\d|a\s+las?\s+\d|at\s+\d|in\s+\d/i.test(raw)) return null;
+
+  const question =
+    /\?\s*$/.test(raw) ||
+    /^(what|when|where|which|who|how|do|does|did|are|is|can|could|would|show|tell|list|any|cu[aá]l|cu[aá]les|qu[eé]|cu[aá]ndo|d[oó]nde|qui[eé]n|c[oó]mo|mu[eé]strame|dime|lista|tengo|hay)\b/i.test(
+      raw.trim(),
+    );
+  if (!question && !/(pendiente|tengo|hay|cu[aá]l|lista|pending|have|list|any|qu[eé])/i.test(raw)) {
     return null;
   }
-  if (/\ben\s+\d|a\s+las?\s+\d|at\s+\d|in\s+\d/i.test(raw)) return null;
-  if (!/(pendiente|tengo|hay|cu[aá]l|lista|pending|have|list|any|qu[eé])/i.test(raw)) return null;
   return { language: detectLanguage(raw) };
 }
 
@@ -499,7 +495,7 @@ async function runReminderRoute(route, sink, userText) {
     const prepared = prepareTool("set_reminder", {
       text: route.text,
       language: route.language,
-      ...(route.minutes !== null ? { minutes: route.minutes } : { at: route.at }),
+      at: route.when.toISOString(),
     });
     const accepted = await requestConfirmation(prepared.summary, sink);
     outcome = accepted ? await prepared.run() : { ok: false, cancelled: true };
@@ -618,7 +614,7 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history,
-    { role: "system", content: clockContext() },
+    { role: "system", content: clockContext(expectedLanguage) },
     { role: "system", content: languageInstruction },
     ...(memory ? [{ role: "system", content: memory }] : []),
     userEntry,
@@ -851,17 +847,17 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
       return;
     }
 
-    const reminder = routeReminder(text);
-    if (reminder) {
-      await runReminderRoute(reminder, sink, text);
+    const query = routeReminderQuery(text);
+    if (query) {
+      await runReminderQuery(query, sink, text);
       busy = false;
       controller = null;
       return;
     }
 
-    const query = routeReminderQuery(text);
-    if (query) {
-      await runReminderQuery(query, sink, text);
+    const reminder = routeReminder(text);
+    if (reminder) {
+      await runReminderRoute(reminder, sink, text);
       busy = false;
       controller = null;
       return;

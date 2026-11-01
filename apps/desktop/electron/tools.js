@@ -172,7 +172,8 @@ export const TOOL_DEFINITIONS = [
           minutes: { type: "number", description: "Minutes from now." },
           at: {
             type: "string",
-            description: "Absolute local datetime in ISO 8601 (e.g. 2026-10-31T18:30).",
+            description:
+              "Absolute local datetime. Prefer ISO 8601 with the full year (YYYY-MM-DDTHH:mm); natural dates like '3 Nov 16:30' are also accepted.",
           },
         },
         required: ["text"],
@@ -525,45 +526,290 @@ function saveReminders(list) {
   writeFileSync(REMINDERS_FILE, JSON.stringify(list, null, 2));
 }
 
-/** Parse "18:07", "6:07 pm", "6:07 p.m." or "18:07:00" as today's local time. */
-function parseClock(text) {
-  const match = text
-    .trim()
-    .match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/i);
-  if (!match) return null;
+/* ------------------------------------------------------- reminder parsing -- */
 
-  let hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const suffix = match[4]?.toLowerCase().replace(/\./g, "");
+const MONTH_WORDS = {
+  1: ["january", "jan", "enero", "ene"],
+  2: ["february", "feb", "febrero", "feb"],
+  3: ["march", "mar", "marzo", "mar"],
+  4: ["april", "apr", "abril", "abr"],
+  5: ["may", "mayo"],
+  6: ["june", "jun", "junio", "jun"],
+  7: ["july", "jul", "julio", "jul"],
+  8: ["august", "aug", "agosto", "ago"],
+  9: ["september", "sept", "sep", "septiembre", "setiembre", "sep"],
+  10: ["october", "oct", "octubre", "oct"],
+  11: ["november", "nov", "noviembre", "nov"],
+  12: ["december", "dec", "diciembre", "dic"],
+};
 
-  if (suffix === "pm" && hours < 12) hours += 12;
-  if (suffix === "am" && hours === 12) hours = 0;
-  if (hours > 23 || minutes > 59) return null;
+const WEEKDAY_WORDS = {
+  0: ["sunday", "sun", "domingo", "dom"],
+  1: ["monday", "mon", "lunes", "lun"],
+  2: ["tuesday", "tues", "tue", "martes"],
+  3: ["wednesday", "wed", "miercoles", "mie"],
+  4: ["thursday", "thurs", "thur", "thu", "jueves", "jue"],
+  5: ["friday", "fri", "viernes", "vie"],
+  6: ["saturday", "sat", "sabado", "sab"],
+};
 
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date;
+const MONTHS = new Map();
+for (const [number, words] of Object.entries(MONTH_WORDS)) {
+  for (const word of words) MONTHS.set(word, Number(number));
+}
+const WEEKDAYS = new Map();
+for (const [number, words] of Object.entries(WEEKDAY_WORDS)) {
+  for (const word of words) WEEKDAYS.set(word, Number(number));
 }
 
-function parseWhen(args) {
+const MONTH_PATTERN = [...MONTHS.keys()].sort((a, b) => b.length - a.length).join("|");
+const WEEKDAY_PATTERN = [...WEEKDAYS.keys()].sort((a, b) => b.length - a.length).join("|");
+const ACCENTS = { "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ü": "u", "ñ": "n" };
+
+/** Lowercase and fold accents without changing the string length, so spans stay valid. */
+function normaliseReminderText(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/[áéíóúüñ]/g, (char) => ACCENTS[char] ?? char);
+}
+
+function matchSpan(text, match, prefix) {
+  let start = match.index;
+  const before = text.slice(0, start);
+  const preposition = prefix ? before.match(prefix) : null;
+  if (preposition) start -= preposition[0].length;
+  return { start, end: match.index + match[0].length };
+}
+
+function applyTime(hour, minute, suffix) {
+  const mark = suffix?.toLowerCase().replace(/\./g, "");
+  if (mark === "pm" && hour < 12) hour += 12;
+  if (mark === "am" && hour === 12) hour = 0;
+  if (mark && hour > 12) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function parseReminderTime(text) {
+  const colon = text.match(/\b(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?/i);
+  if (colon) {
+    const value = applyTime(Number(colon[1]), Number(colon[2]), colon[3]);
+    if (value) {
+      return {
+        ...value,
+        span: matchSpan(text, colon, /(?:\bat|\ba\s+las?)\s*$/i),
+      };
+    }
+  }
+
+  const at = text.match(/\b(?:at|a\s+las?)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?/i);
+  if (at) {
+    const after = text.slice(at.index + at[0].length);
+    const dateLike = !at[2] && !at[3] && new RegExp(`^\\s*(?:of\\s+|de\\s+)?(?:${MONTH_PATTERN})\\b`, "i").test(after);
+    if (!dateLike) {
+      const value = applyTime(Number(at[1]), at[2] ? Number(at[2]) : 0, at[3]);
+      if (value) return { ...value, span: matchSpan(text, at, null) };
+    }
+  }
+
+  const ampm = text.match(/\b(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)\b/i);
+  if (ampm) {
+    const value = applyTime(Number(ampm[1]), 0, ampm[2]);
+    if (value) return { ...value, span: matchSpan(text, ampm, /(?:\bat|\ba\s+las?)\s*$/i) };
+  }
+
+  return null;
+}
+
+function parseReminderDate(text) {
+  const iso = text.match(
+    /\b(\d{4})-(\d{1,2})-(\d{1,2})(?:[t ](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?(?:z|[+-]\d{2}:?\d{2})?\b/i,
+  );
+  if (iso) {
+    return {
+      year: Number(iso[1]),
+      month: Number(iso[2]),
+      day: Number(iso[3]),
+      hour: iso[4] ? Number(iso[4]) : null,
+      minute: iso[5] ? Number(iso[5]) : null,
+      zoned: /(?:z|[+-]\d{2}:?\d{2})$/i.test(iso[0]),
+      raw: iso[0],
+      span: { start: iso.index, end: iso.index + iso[0].length },
+    };
+  }
+
+  const numeric = text.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (numeric) {
+    const day = Number(numeric[1]);
+    const month = Number(numeric[2]);
+    let year = numeric[3] ? Number(numeric[3]) : null;
+    if (year !== null && year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return { year, month, day, span: { start: numeric.index, end: numeric.index + numeric[0].length } };
+    }
+  }
+
+  const dayFirst = text.match(
+    new RegExp(
+      `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+|de\\s+)?(${MONTH_PATTERN})\\b(?:\\s*,?\\s*(?:de\\s+)?(\\d{4}))?`,
+      "i",
+    ),
+  );
+  if (dayFirst) {
+    const day = Number(dayFirst[1]);
+    const month = MONTHS.get(dayFirst[2]);
+    const year = dayFirst[3] ? Number(dayFirst[3]) : null;
+    if (month && day >= 1 && day <= 31) {
+      return {
+        year,
+        month,
+        day,
+        span: matchSpan(text, dayFirst, /(?:\bon|\bel|\bthe)\s*$/i),
+      };
+    }
+  }
+
+  const monthFirst = text.match(
+    new RegExp(
+      `\\b(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s*,?\\s*(?:de\\s+)?(\\d{4}))?`,
+      "i",
+    ),
+  );
+  if (monthFirst) {
+    const month = MONTHS.get(monthFirst[1]);
+    const day = Number(monthFirst[2]);
+    const year = monthFirst[3] ? Number(monthFirst[3]) : null;
+    if (month && day >= 1 && day <= 31) {
+      return {
+        year,
+        month,
+        day,
+        span: matchSpan(text, monthFirst, /(?:\bon|\bel|\bthe)\s*$/i),
+      };
+    }
+  }
+
+  const relative = text.match(/\b(today|tonight|tomorrow|hoy|manana)\b/);
+  if (relative) {
+    const word = relative[1];
+    return {
+      kind: "relative",
+      offsetDays: word === "tomorrow" || word === "manana" ? 1 : 0,
+      tonight: word === "tonight",
+      span: { start: relative.index, end: relative.index + relative[0].length },
+    };
+  }
+
+  const weekday = text.match(
+    new RegExp(`\\b(?:(next|this|el|la|proximo|proxima)\\s+)?(${WEEKDAY_PATTERN})\\b`, "i"),
+  );
+  if (weekday) {
+    const number = WEEKDAYS.get(weekday[2]);
+    if (number !== undefined) {
+      return {
+        kind: "weekday",
+        weekday: number,
+        strict: weekday[1] === "next" || weekday[1] === "proximo" || weekday[1] === "proxima",
+        span: { start: weekday.index, end: weekday.index + weekday[0].length },
+      };
+    }
+  }
+
+  return null;
+}
+
+function combineReminderDate(now, date, time) {
+  if (!date) {
+    if (!time) return null;
+    const when = new Date(now.getFullYear(), now.getMonth(), now.getDate(), time.hour, time.minute, 0, 0);
+    if (when.getTime() <= now.getTime() + 5_000) when.setDate(when.getDate() + 1);
+    return when;
+  }
+
+  if (date.kind === "relative") {
+    const hour = time?.hour ?? (date.tonight ? 20 : 9);
+    const minute = time?.minute ?? 0;
+    const when = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+    when.setDate(when.getDate() + date.offsetDays);
+    return when;
+  }
+
+  if (date.kind === "weekday") {
+    const hour = time?.hour ?? 9;
+    const minute = time?.minute ?? 0;
+    let delta = (date.weekday - now.getDay() + 7) % 7;
+    const sameDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+    if (delta === 0 && (date.strict || sameDay.getTime() <= now.getTime())) delta = 7;
+    const when = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+    when.setDate(when.getDate() + delta);
+    return when;
+  }
+
+  const hour = time?.hour ?? 9;
+  const minute = time?.minute ?? 0;
+  const year = date.year ?? now.getFullYear();
+  const when = new Date(year, date.month - 1, date.day, hour, minute, 0, 0);
+  if (
+    when.getFullYear() !== year ||
+    when.getMonth() !== date.month - 1 ||
+    when.getDate() !== date.day
+  ) {
+    return null;
+  }
+  return when;
+}
+
+/**
+ * Parse a reminder date/time in English or Spanish.
+ * Returns the resolved local Date, the matched spans (for stripping the text)
+ * and whether an explicit time was present.
+ */
+export function parseReminderWhen(input, now = new Date()) {
+  const original = String(input ?? "");
+  if (!original.trim()) return null;
+  const text = normaliseReminderText(original);
+
+  const relative = text.match(
+    /\b(?:in|en)\s+(\d{1,3})\s*(minutes?|mins?|minutos?|min|hours?|hrs?|horas?|h)\b/,
+  );
+  if (relative) {
+    const amount = Number(relative[1]);
+    const minutes = /^(?:h|hr|hrs|hour|hours|hora|horas)$/.test(relative[2]) ? amount * 60 : amount;
+    return {
+      when: new Date(now.getTime() + minutes * 60_000),
+      spans: [{ start: relative.index, end: relative.index + relative[0].length }],
+      hasTime: true,
+    };
+  }
+
+  const date = parseReminderDate(text);
+  if (date?.zoned && typeof date.hour === "number") {
+    const when = new Date(date.raw);
+    if (!Number.isNaN(when.getTime())) return { when, spans: [date.span], hasTime: true };
+  }
+
+  const time =
+    typeof date?.hour === "number"
+      ? { hour: date.hour, minute: date.minute ?? 0, span: date.span }
+      : parseReminderTime(text);
+  if (!date && !time) return null;
+
+  const when = combineReminderDate(now, date, time);
+  if (!when) return null;
+
+  const spans = [];
+  if (date) spans.push(date.span);
+  if (time && time.span !== date?.span) spans.push(time.span);
+  return { when, spans, hasTime: Boolean(time) };
+}
+
+function parseWhen(args, now = new Date()) {
   if (typeof args.minutes === "number" && Number.isFinite(args.minutes) && args.minutes > 0) {
-    return new Date(Date.now() + args.minutes * 60_000);
+    return new Date(now.getTime() + args.minutes * 60_000);
   }
 
   if (typeof args.at === "string" && args.at.trim()) {
-    const raw = args.at.trim();
-
-    // Full ISO datetime first, then a bare clock time for today.
-    if (/T|\d{4}-\d{2}-\d{2}/.test(raw)) {
-      const date = new Date(raw);
-      if (!Number.isNaN(date.getTime())) return date;
-    }
-
-    const clock = parseClock(raw);
-    if (clock) return clock;
-
-    const fallback = new Date(raw);
-    if (!Number.isNaN(fallback.getTime())) return fallback;
+    return parseReminderWhen(args.at, now)?.when ?? null;
   }
 
   return null;
@@ -585,7 +831,7 @@ function prepareReminder(args) {
   if (!text) throw new Error("reminder text is required");
 
   const when = parseWhen(args);
-  if (!when) throw new Error("se necesita 'minutes' o 'at' para el recordatorio");
+  if (!when) throw new Error("no pude interpretar la fecha; usá 'in 20 minutes' o '3 Nov 16:30'");
   if (when.getTime() <= Date.now() + 5_000) throw new Error("esa hora ya pasó");
 
   const language = args.language === "en" ? "en" : "es";

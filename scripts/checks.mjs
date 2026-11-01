@@ -17,6 +17,7 @@ import {
   parseConversionQuery,
   parseCurrencyQuery,
   parseIcsEvents,
+  parseReminderWhen,
   parseSteamFreeKeepPage,
   parseSteamSearch,
 } from "../apps/desktop/electron/tools.js";
@@ -87,6 +88,38 @@ test("short ambiguous messages follow the interface language", () => {
   assert.equal(detectLanguage("tell something", "en"), "en");
   assert.equal(detectLanguage("tell something", "es"), "es");
   assert.equal(detectLanguage("dime algo", "es"), "es");
+});
+
+test("reminder dates keep the day, not just the clock", () => {
+  const now = new Date(2026, 10, 1, 17, 45, 0, 0);
+  const at = (text) => parseReminderWhen(text, now)?.when;
+  const expected = new Date(2026, 10, 3, 16, 30, 0, 0).getTime();
+
+  assert.equal(at("Remind me to watch Bayern match at 3 Nov 16:30")?.getTime(), expected);
+  assert.equal(
+    at("Set a reminder to watch Bayern match the 3 of November at 16:30")?.getTime(),
+    expected,
+  );
+  assert.equal(
+    at("Set a reminder to watch Bayern's match Nov 3 at 16:30")?.getTime(),
+    expected,
+  );
+  assert.equal(at("3/11 at 16:30")?.getTime(), expected);
+  assert.equal(at("2026-11-03T16:30")?.getTime(), expected);
+  assert.equal(at("3 Nov 2027 16:30")?.getFullYear(), 2027);
+  assert.equal(at("31 Feb at 10"), undefined);
+});
+
+test("reminder times support relative days and hours", () => {
+  const now = new Date(2026, 10, 1, 17, 45, 0, 0);
+  const at = (text) => parseReminderWhen(text, now)?.when;
+
+  assert.equal(at("in 20 minutes")?.getTime(), new Date(2026, 10, 1, 18, 5).getTime());
+  assert.equal(at("en 20 minutos")?.getTime(), new Date(2026, 10, 1, 18, 5).getTime());
+  assert.equal(at("tomorrow at 9")?.getTime(), new Date(2026, 10, 2, 9, 0).getTime());
+  assert.equal(at("manana a las 9")?.getTime(), new Date(2026, 10, 2, 9, 0).getTime());
+  assert.equal(at("next Monday at 10")?.getTime(), new Date(2026, 10, 2, 10, 0).getTime());
+  assert.equal(at("at 9")?.getTime(), new Date(2026, 10, 2, 9, 0).getTime());
 });
 
 test("activity beats ignore browser tab titles", () => {
