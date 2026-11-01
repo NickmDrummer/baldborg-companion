@@ -44,7 +44,7 @@ body,
 .stage.interactive.side-right,
 .stage.interactive.side-left {
   flex-direction: row;
-  align-items: stretch;
+  align-items: flex-start;
   justify-content: flex-start;
   gap: 12px;
   padding: 8px;
@@ -65,7 +65,8 @@ body,
   display: flex;
   flex-direction: column;
   flex: 0 0 340px;
-  height: auto;
+  /* Head top to the bottom of the passive status pill: 220 + 8 + 18. */
+  height: calc(220px + 8px + 18px);
 }
 
 .stage.interactive.side-right .transcript,

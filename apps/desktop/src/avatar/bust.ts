@@ -152,7 +152,7 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   const sockets = [
     { x: -dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
     { x: dims.x * 0.17, y: dims.y * 0.02, w: dims.x * 0.3, h: dims.y * 0.1 },
-    { x: 0, y: -dims.y * 0.28, w: dims.x * 0.22, h: dims.y * 0.075 },
+    { x: 0, y: -dims.y * 0.22, w: dims.x * 0.24, h: dims.y * 0.18 },
   ];
   for (const socket of sockets) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), socketMaterial);
@@ -166,8 +166,8 @@ export async function loadHead(material: HeadMaterial = "normal"): Promise<HeadR
   mouthMaterial.uniforms.uOpen = MOUTH_UNIFORMS.open;
   mouthMaterial.uniforms.uMouth.value = 1;
   const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mouthMaterial);
-  mouth.scale.set(dims.x * 0.15, dims.y * 0.075, 1);
-  mouth.position.set(0, -dims.y * 0.28, FORWARD * surfaceZ(0, -dims.y * 0.28, dims.z * 0.34));
+  mouth.scale.set(dims.x * 0.15, dims.y * 0.15, 1);
+  mouth.position.set(0, -dims.y * 0.22, FORWARD * surfaceZ(0, -dims.y * 0.22, dims.z * 0.34));
   mouth.renderOrder = 2;
   group.add(mouth);
 
@@ -325,7 +325,7 @@ function createSocketMaterial(): THREE.ShaderMaterial {
     depthWrite: false,
     depthTest: false,
     uniforms: {
-      uOpacity: { value: 0.82 },
+      uOpacity: { value: 0.98 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -340,7 +340,7 @@ function createSocketMaterial(): THREE.ShaderMaterial {
       void main() {
         float d = length((vUv - 0.5) * 2.0);
         float alpha = smoothstep(1.0, 0.45, d) * uOpacity;
-        gl_FragColor = vec4(vec3(0.0, 0.015, 0.03), alpha);
+        gl_FragColor = vec4(vec3(0.0), alpha);
       }
     `,
   });

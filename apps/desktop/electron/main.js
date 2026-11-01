@@ -162,8 +162,6 @@ const HEAD_CENTER_RIGHT = SIDE_MARGIN + HEAD_BOX / 2; // 108
 const HEAD_CENTER_LEFT = SIDE_WIDTH - SIDE_MARGIN - HEAD_BOX / 2; // 460
 const SIZES = {
   passive: { width: 380, height: WINDOW_HEIGHT },
-  stacked: { width: 380, height: WINDOW_HEIGHT },
-  side: { width: SIDE_WIDTH, height: WINDOW_HEIGHT },
 };
 /** Gap between the overlay and the monitor edge, in px. */
 const EDGE_MARGIN = 24;
@@ -368,21 +366,14 @@ function headCenterForClient(client, side = chatSide) {
 }
 
 /**
- * Pick the side with room for the console. The head centre stays fixed; the
- * console opens towards the half of the screen with more free space. If
- * neither side can fit, keep the vertical layout.
+ * The console always opens sideways: left half -> right, right half -> left.
+ * The head centre stays fixed, so the window grows towards the free side.
+ * There is deliberately no vertical fallback.
  */
 function chooseChatSide(headCenterX, monitor) {
-  if (!monitor || headCenterX == null) return "stacked";
-  const leftFits = headCenterX - HEAD_CENTER_LEFT >= monitor.x + EDGE_MARGIN;
-  const rightFits =
-    headCenterX - HEAD_CENTER_RIGHT + SIDE_WIDTH <= monitor.x + monitor.width - EDGE_MARGIN;
-  if (!leftFits && !rightFits) return "stacked";
-  if (leftFits && rightFits) {
-    const monitorCenter = monitor.x + monitor.width / 2;
-    return headCenterX <= monitorCenter ? "right" : "left";
-  }
-  return rightFits ? "right" : "left";
+  if (!monitor || headCenterX == null) return "right";
+  const monitorCenter = monitor.x + monitor.width / 2;
+  return headCenterX <= monitorCenter ? "right" : "left";
 }
 
 function geometryFor(next, monitor, client) {
@@ -391,7 +382,7 @@ function geometryFor(next, monitor, client) {
     headAnchorX ?? (client?.at ? client.at[0] + (client.size?.[0] ?? SIZES.passive.width) / 2 : null);
   const center = fallbackCenter ?? (monitor ? monitor.x + monitor.width / 2 : 0);
   const side = interactive ? chooseChatSide(center, monitor) : "stacked";
-  const width = interactive && side !== "stacked" ? SIDE_WIDTH : SIZES.passive.width;
+  const width = interactive ? SIDE_WIDTH : SIZES.passive.width;
   const offset =
     side === "right" ? HEAD_CENTER_RIGHT : side === "left" ? HEAD_CENTER_LEFT : HEAD_CENTER_STACKED;
   const idealX = center - offset;
