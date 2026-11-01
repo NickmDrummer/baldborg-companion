@@ -8,8 +8,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs";
 import {
@@ -30,9 +29,8 @@ import {
   rememberFact,
 } from "./memory.js";
 import { detectLanguage } from "./voice.js";
+import { readConfig } from "./settings.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 const MEMORY_DIR = join(homedir(), ".config", "baldborg");
 const MEMORY_FILE = join(MEMORY_DIR, "memory.json");
 
@@ -55,7 +53,7 @@ const MAX_TOOL_ROUNDS = 4;
 
 function loadConfig() {
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    const raw = readConfig();
     return { ...DEFAULTS, ...(raw.brain ?? {}) };
   } catch {
     return { ...DEFAULTS };

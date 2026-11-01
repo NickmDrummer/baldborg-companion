@@ -10,13 +10,10 @@
 import { spawn } from "node:child_process";
 import { readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { ensureVoiceReady } from "./voice.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
+import { readConfig } from "./settings.js";
 
 const HOST = "http://127.0.0.1:8765";
 const SAMPLE_RATE = 16000;
@@ -117,7 +114,7 @@ export function stopListening() {
 
 function sttConfig() {
   try {
-    const voice = JSON.parse(readFileSync(CONFIG_PATH, "utf8")).voice ?? {};
+    const voice = readConfig().voice ?? {};
     return { model: "small", language: "auto", ...(voice.stt ?? {}) };
   } catch {
     return { model: "small", language: "auto" };

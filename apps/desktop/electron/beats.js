@@ -6,16 +6,13 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, uptime } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { BEATS } from "../../../packages/persona/beats.mjs";
 import { rewriteBeat } from "./beatgen.js";
 import { lastMatch, lastWeather } from "./tools.js";
+import { readConfig } from "./settings.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(__dirname, "..", "..", "..");
-const CONFIG_PATH = join(REPO_ROOT, "config", "default.json");
 const STATE_DIR = join(homedir(), ".config", "baldborg");
 const STATE_FILE = join(STATE_DIR, "beats.json");
 const REMINDERS_FILE = join(STATE_DIR, "reminders.json");
@@ -36,7 +33,7 @@ const LANGUAGES = new Set(["es", "en", "auto"]);
 
 function config() {
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    const raw = readConfig();
     return { ...DEFAULTS, ...(raw.beats ?? {}) };
   } catch {
     return { ...DEFAULTS };

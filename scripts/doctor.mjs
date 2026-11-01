@@ -16,8 +16,11 @@ import { freemem, homedir, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readConfig } from "../apps/desktop/electron/settings.js";
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG_PATH = join(REPO_ROOT, "config", "default.json");
+const USER_CONFIG_PATH = join(homedir(), ".config", "baldborg", "config.json");
 const STATE_DIR = join(homedir(), ".config", "baldborg");
 const CONTROL_SOCKET = join(STATE_DIR, "control.sock");
 const VOICE_FILE = join(STATE_DIR, "voice.json");
@@ -125,9 +128,14 @@ async function main() {
   console.log(`\n${colors.bold("Baldborg doctor")}\n`);
 
   /* ------------------------------------------------------------- config -- */
-  const config = readJson(CONFIG_PATH);
+  let config;
+  try {
+    config = readConfig();
+  } catch (error) {
+    console.warn(error.message);
+  }
   if (!config) {
-    fail("Configuración ilegible", CONFIG_PATH);
+    fail("Configuración ilegible", `${CONFIG_PATH} + ${USER_CONFIG_PATH}`);
   } else {
     ok("Configuración válida");
     const model = config.brain?.model;

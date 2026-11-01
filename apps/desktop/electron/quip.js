@@ -9,12 +9,7 @@
  * truth behind the task.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
+import { readConfig } from "./settings.js";
 
 const DEFAULTS = {
   host: "http://127.0.0.1:11434",
@@ -156,7 +151,7 @@ const ANGLES = {
 
 function config() {
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    const raw = readConfig();
     return { ...DEFAULTS, ...(raw.brain ?? {}) };
   } catch {
     return { ...DEFAULTS };

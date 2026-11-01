@@ -1,17 +1,19 @@
 /**
- * Single writer for `config/default.json`.
+ * Configuration loader/writer.
  *
- * Tools and commands read this file on every call, so a change takes effect
- * immediately without restarting the app. Writes are atomic to avoid leaving a
- * half-written config if the process dies mid-save.
+ * `config/default.json` is the read-only project default. User changes are
+ * written to `~/.config/baldborg/config.json` and merged over those defaults.
+ * Writes are atomic to avoid leaving a half-written user config.
  */
 
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
+const DEFAULT_CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
+const USER_CONFIG_PATH = join(homedir(), ".config", "baldborg", "config.json");
 
 export const BEAT_LANGUAGES = new Set(["es", "en"]);
 export const AVATAR_MATERIALS = new Set(["normal", "hologram"]);
@@ -30,16 +32,43 @@ export const AZURE_VOICES = {
   },
 };
 
+function merge(base, override) {
+  if (Array.isArray(override)) return override;
+  if (
+    override &&
+    typeof override === "object" &&
+    base &&
+    typeof base === "object" &&
+    !Array.isArray(base)
+  ) {
+    const out = { ...base };
+    for (const [key, value] of Object.entries(override)) {
+      out[key] = merge(base[key], value);
+    }
+    return out;
+  }
+  return override === undefined ? base : override;
+}
+
 export function readConfig() {
-  return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  const defaults = JSON.parse(readFileSync(DEFAULT_CONFIG_PATH, "utf8"));
+  if (!existsSync(USER_CONFIG_PATH)) return defaults;
+  try {
+    const user = JSON.parse(readFileSync(USER_CONFIG_PATH, "utf8"));
+    return merge(defaults, user);
+  } catch (error) {
+    console.warn("[baldborg] user config unreadable, using defaults:", error.message);
+    return defaults;
+  }
 }
 
 export function updateConfig(mutator) {
   const raw = readConfig();
   mutator(raw);
-  const temporary = `${CONFIG_PATH}.tmp`;
+  mkdirSync(dirname(USER_CONFIG_PATH), { recursive: true });
+  const temporary = `${USER_CONFIG_PATH}.tmp`;
   writeFileSync(temporary, JSON.stringify(raw, null, 2) + "\n");
-  renameSync(temporary, CONFIG_PATH);
+  renameSync(temporary, USER_CONFIG_PATH);
   return raw;
 }
 

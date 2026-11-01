@@ -11,10 +11,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readConfig } from "./settings.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..", "..");
 const VOICE_DIR = join(REPO_ROOT, "services", "voice");
-const CONFIG_PATH = join(REPO_ROOT, "config", "default.json");
 const HOST = "http://127.0.0.1:8765";
 
 const DEFAULTS = {
@@ -103,7 +104,7 @@ async function synthesizeAzure(text, lang, config) {
 
 function voiceConfig() {
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    const raw = readConfig();
     return { ...DEFAULTS, ...(raw.voice ?? {}) };
   } catch {
     return { ...DEFAULTS };

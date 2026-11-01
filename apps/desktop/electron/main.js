@@ -63,6 +63,7 @@ import {
   setBeatsEvery,
   setSilentHours,
   setUiLanguage,
+  readConfig,
   setVoiceEffectsPreset,
   setVoiceProvider,
 } from "./settings.js";
@@ -94,7 +95,6 @@ app.commandLine.appendSwitch("force-device-scale-factor", "1");
 const WM_CLASS = "baldborg-desktop";
 
 /** Passive mode only needs the head; interactive mode adds the chat bar. */
-const CONFIG_PATH = join(__dirname, "..", "..", "..", "config", "default.json");
 
 function sessionLocked() {
   const id = process.env.XDG_SESSION_ID;
@@ -143,7 +143,7 @@ function currentThemeAccent() {
 
 function avatarMaterial() {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf8")).avatar?.material ?? "normal";
+    return readConfig().avatar?.material ?? "normal";
   } catch {
     return "normal";
   }

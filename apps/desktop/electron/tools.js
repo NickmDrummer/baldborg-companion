@@ -104,8 +104,8 @@ function toolsConfig() {
   const raw = config().tools ?? {};
   return {
     enabled: raw.enabled !== false,
-    weather: { defaultCity: "Rosario", ...(raw.weather ?? {}) },
-    team: { name: "Rosario Central", ...(raw.team ?? {}) },
+    weather: { defaultCity: "myCity", ...(raw.weather ?? {}) },
+    team: { name: "mySoccerClub", ...(raw.team ?? {}) },
     currency: { defaultHouse: "blue", ...(raw.currency ?? {}) },
     calendar: { days: 7, paths: [], ...(raw.calendar ?? {}) },
   };

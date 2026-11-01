@@ -28,7 +28,7 @@
       "model": "small",
       "language": "auto"
     },
-    "provider": "azure",
+    "provider": "kokoro",
     "azure": {
       "es": {
         "voice": "es-MX-JorgeMultilingualNeural",
@@ -69,10 +69,10 @@
   "tools": {
     "enabled": true,
     "weather": {
-      "defaultCity": "Rosario"
+      "defaultCity": "myCity"
     },
     "team": {
-      "name": "Bayern Munich"
+      "name": "mySoccerClub"
     },
     "currency": {
       "defaultHouse": "blue"
@@ -93,7 +93,7 @@
     "dailyCap": 6,
     "speak": true,
     "language": "en",
-    "everyMinutes": 30,
+    "everyMinutes": 0,
     "generator": "model"
   },
   "ui": {
