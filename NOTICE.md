@@ -28,12 +28,18 @@ Models are downloaded by the user with Ollama and keep their own licenses:
 
 - Qwen3 (Apache License 2.0).
 - Llama 3.2 (Llama 3.2 Community License).
+- Model licences are supplied by the model publisher; review them before use.
 
 ## Data sources
 
 - Open-Meteo (weather): free API, CC-BY 4.0 attribution required.
 - TheSportsDB (fixtures): public API, free test key. Data belongs to
   TheSportsDB and its providers.
+- dolarapi.com (exchange rates): public API; data belongs to its providers.
+- Epic Games Store free-game promotions: public promotion feed; game titles,
+  store links and artwork belong to Epic Games and the respective publishers.
+- Steam Store search and app pages: public store data; game titles, store
+  links and artwork belong to Valve and the respective publishers.
 
 ## Libraries
 
@@ -41,6 +47,8 @@ Models are downloaded by the user with Ollama and keep their own licenses:
 - Electron: MIT License.
 - React: MIT License.
 - FastAPI / Uvicorn: MIT / BSD.
+- faster-whisper / CTranslate2 / PyAV: MIT / MIT / BSD.
+- Quickshell and the Omarchy shell (bar widget runtime): MIT / MIT.
 
 ## Fonts
 

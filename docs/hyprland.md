@@ -11,7 +11,8 @@ is registered with `hl.window_rule` instead of the old `windowrulev2` syntax.
 
 The script copies `config/hypr/baldborg.lua` into `~/.config/hypr/`, appends
 `require("hypr.baldborg")` to `hyprland.lua` (with a timestamped backup), and
-reloads Hyprland. It is idempotent.
+reloads Hyprland. It is idempotent. It installs only the integration; Hyprland
+itself is a prerequisite and is never installed by this repository.
 
 Bindings created by the file:
 
