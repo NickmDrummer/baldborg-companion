@@ -20,7 +20,16 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cancelChat, confirmAction, getHistory, isBusy, resetHistory, startChat, warmup } from "./brain.js";
+import {
+  cancelChat,
+  confirmAction,
+  getHistory,
+  isBusy,
+  resetHistory,
+  startChat,
+  startTask,
+  warmup,
+} from "./brain.js";
 import {
   beatStatus,
   forceBeat,
@@ -382,10 +391,19 @@ async function applyWindowGeometry(next, monitorOverride = null) {
   );
 }
 
-/** On restart the overlay starts on workspace 1 of the primary output. */
+/** On restart the overlay starts on workspace 1 of the focused output. */
 async function resetToDefaultWorkspace() {
   if (!win) return;
-  await hyprDispatch(`hl.dsp.window.move({ workspace = "1", window = "class:${WM_CLASS}" })`);
+  const monitors = hyprlandMonitors();
+  const target = monitors.find((monitor) => monitor.focused) ?? monitors[0] ?? null;
+  if (target) {
+    await hyprDispatch(
+      `hl.dsp.window.move({ monitor = ${JSON.stringify(target.name)}, window = "class:${WM_CLASS}", follow = false })`,
+    );
+  }
+  await hyprDispatch(
+    `hl.dsp.window.move({ workspace = "1", window = "class:${WM_CLASS}", follow = false })`,
+  );
   const client = hyprlandClient();
   const monitor = monitorForClient(client);
   if (monitor) await applyWindowGeometry("passive", monitor);
@@ -706,6 +724,8 @@ function runAppCommand(raw) {
               "/remember key = value — store a fact",
               "/memory — long-term memory",
               "/forget-fact key — delete a fact",
+              "/translate [es|en] <text> — translate locally",
+              "/correct <text> — fix grammar and spelling",
               "/clean-history — wipe the conversation",
               "/help — this list",
             ].join("\n")
@@ -729,6 +749,8 @@ function runAppCommand(raw) {
               "/remember clave = valor — guardar un hecho",
               "/memory — ver la memoria de largo plazo",
               "/forget-fact clave — borrar un hecho",
+              "/translate [es|en] <texto> — traducir en local",
+              "/correct <texto> — corregir gramática y ortografía",
               "/clean-history — borrar la memoria de la conversación",
               "/help — esta lista",
             ].join("\n"),
@@ -904,6 +926,20 @@ function runAppCommand(raw) {
         message: language === "en" ? "Interface and beats language: English." : "Idioma de la interfaz y los beats: español.",
       };
     }
+
+    case "/translate":
+      return {
+        ok: false,
+        message: en
+          ? "Usage: /translate [es|en] <text>"
+          : "Uso: /translate [es|en] <texto>",
+      };
+
+    case "/correct":
+      return {
+        ok: false,
+        message: en ? "Usage: /correct <text>" : "Uso: /correct <texto>",
+      };
 
     case "/clean-history":
     case "/forget":
@@ -1233,6 +1269,17 @@ function registerIpc() {
   ipcMain.handle("brain:chat", (_event, text) => {
     if (typeof text !== "string" || !text.trim()) return;
     runChat(text.trim());
+  });
+  ipcMain.handle("brain:task", (_event, kind, text, target) => {
+    if (typeof text !== "string" || !text.trim()) return;
+    noteInteraction();
+    startTask(
+      kind === "correct" ? "correct" : "translate",
+      text.trim(),
+      target === "en" || target === "es" ? target : undefined,
+      (event) => win?.webContents.send("brain:event", event),
+      interfaceLanguage(),
+    );
   });
   ipcMain.handle("brain:cancel", () => cancelChat());
   ipcMain.handle("app:command", (_event, raw) => {

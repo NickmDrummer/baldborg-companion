@@ -73,6 +73,13 @@
     },
     "team": {
       "name": "Bayern Munich"
+    },
+    "currency": {
+      "defaultHouse": "blue"
+    },
+    "calendar": {
+      "days": 7,
+      "paths": []
     }
   },
   "beats": {

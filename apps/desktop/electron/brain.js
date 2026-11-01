@@ -16,6 +16,8 @@ import {
   configuredCity,
   configuredTeam,
   listPendingReminders,
+  parseConversionQuery,
+  parseCurrencyQuery,
   prepareTool,
   toolDefinitions,
   toolsEnabled,
@@ -106,7 +108,8 @@ function clockContext() {
   const day = now.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
   return (
     `Runtime context: it is ${time} on ${day} on the client's workstation. ` +
-    "Weather, reminders, clock, workstation status and the client's football team are available through tools. " +
+    "Weather, reminders, clock, workstation status, the client's football team, dollar and currency rates, " +
+    "unit conversion, the local calendar and Epic free games are available through tools. " +
     "Do not repeat phrases or closings you have already used in this conversation."
   );
 }
@@ -311,6 +314,42 @@ function needsTeamTool(text) {
   );
 }
 
+function needsSystemTool(text) {
+  return /\b(gpu|vram|gr[aá]fica|tarjeta gr[aá]fica|memoria ram|ram|bater[ií]a|battery|uptime|carga (del|de la) (sistema|equipo|m[aá]quina)|uso de (cpu|memoria|gpu)|system status|workstation status|estado del (equipo|sistema))\b/i.test(
+    text,
+  );
+}
+
+function needsCalendarTool(text) {
+  return (
+    /\b(agenda|calendario|calendar)\b/i.test(text) ||
+    /\b(qu[eé] tengo|what do i have|pr[oó]xim[oa]s? (evento|reuni[oó]n)|next (event|meeting)|mis (eventos|reuniones)|my (events|meetings))\b/i.test(
+      text,
+    )
+  );
+}
+
+function needsEpicTool(text) {
+  return /\b(epic|juegos gratis|juego gratis|free games?|gratis en epic)\b/i.test(text);
+}
+
+function calendarDays(text) {
+  const match = text.match(/\b(?:pr[oó]xim[oa]s?|next|en los pr[oó]ximos)\s+(\d{1,2})\s*(d[ií]as?|days?)\b/i);
+  if (match) return Math.min(90, Math.max(1, Number(match[1])));
+  if (/\b(hoy|today)\b/i.test(text)) return 1;
+  if (/\b(mañana|tomorrow)\b/i.test(text)) return 2;
+  if (/\b(esta semana|this week)\b/i.test(text)) return 7;
+  return 7;
+}
+
+function authoritativeToolBrief(english, labelEs, labelEn, data) {
+  return english
+    ? `Authoritative ${labelEn} result for this turn: ${JSON.stringify(data)}. ` +
+        "Answer only from these data, never from memory. Do not call the tool again."
+    : `Resultado autoritativo de ${labelEs} para este turno: ${JSON.stringify(data)}. ` +
+        "Responda solo con estos datos, nunca de memoria. No vuelva a llamar a la herramienta.";
+}
+
 /** True when the question is about the configured team, not another club. */
 function mentionsConfiguredTeam(text) {
   const words = configuredTeam()
@@ -451,7 +490,8 @@ async function runReminderRoute(route, sink, userText) {
 }
 
 /** One request/response round against Ollama. */
-async function chatRound(messages, model, sink) {
+async function chatRound(messages, model, sink, useTools = true) {
+  const withTools = useTools && toolsEnabled();
   const response = await fetch(`${config.host}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -461,12 +501,12 @@ async function chatRound(messages, model, sink) {
       messages,
       stream: true,
       keep_alive: config.keepAlive,
-      ...(toolsEnabled() ? { tools: toolDefinitions() } : {}),
+      ...(withTools ? { tools: toolDefinitions() } : {}),
       think: config.think,
       options: {
-        temperature: config.temperature,
+        temperature: withTools ? config.temperature : 0.2,
         num_ctx: config.numCtx,
-        num_predict: config.numPredict,
+        num_predict: withTools ? config.numPredict : 512,
       },
     }),
   });
@@ -630,6 +670,112 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     });
   }
 
+  // Deterministic lookups: fetch first and hand the model the result, so a
+  // small local model cannot refuse or invent numbers.
+  if (toolsEnabled() && parseConversionQuery(text)) {
+    const conversion = parseConversionQuery(text);
+    try {
+      const converted = await prepareTool("convert_units", conversion).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "convert_units",
+          "convert_units",
+          english ? converted.summaryEn : converted.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] conversion prefetch failed:", error.message);
+    }
+  }
+
+  if (toolsEnabled() && parseCurrencyQuery(text)) {
+    try {
+      const rate = await prepareTool("get_exchange_rate", parseCurrencyQuery(text)).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "get_exchange_rate",
+          "get_exchange_rate",
+          english ? rate.summaryEn : rate.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] currency prefetch failed:", error.message);
+      messages.push({
+        role: "system",
+        content: english
+          ? "The exchange-rate lookup failed. Say so plainly; do not invent a rate."
+          : "La consulta de cotizaciones falló. Dígalo claramente; no invente una cotización.",
+      });
+    }
+  }
+
+  if (toolsEnabled() && needsSystemTool(text)) {
+    try {
+      const status = await prepareTool("system_status", {}).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "system_status",
+          "system_status",
+          english ? status.summaryEn : status.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] system status prefetch failed:", error.message);
+    }
+  }
+
+  if (toolsEnabled() && needsCalendarTool(text)) {
+    try {
+      const agenda = await prepareTool("calendar_events", { days: calendarDays(text) }).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "calendar_events",
+          "calendar_events",
+          english ? agenda.summaryEn : agenda.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] calendar prefetch failed:", error.message);
+      messages.push({
+        role: "system",
+        content: english
+          ? "The local calendar lookup failed. Say so plainly; do not invent events."
+          : "La consulta del calendario local falló. Dígalo claramente; no invente eventos.",
+      });
+    }
+  }
+
+  if (toolsEnabled() && needsEpicTool(text)) {
+    try {
+      const epic = await prepareTool("epic_free_games", {}).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "epic_free_games",
+          "epic_free_games",
+          english ? epic.summaryEn : epic.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] epic prefetch failed:", error.message);
+      messages.push({
+        role: "system",
+        content: english
+          ? "The Epic free-games lookup failed. Say so plainly; do not invent games."
+          : "La consulta de juegos gratis de Epic falló. Dígalo claramente; no invente juegos.",
+      });
+    }
+  }
+
   let finalText = "";
   let reminderToolRan = false;
 
@@ -777,6 +923,58 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     controller = null;
     for (const resolve of confirmations.values()) resolve(false);
     confirmations.clear();
+  }
+}
+
+/**
+ * One-shot text utility (translation or grammar correction).
+ * It is not part of the conversation: no persona, no history, no tools.
+ */
+export async function startTask(kind, text, target, sink, language = "es") {
+  if (busy) cancelChat(sink);
+  busy = true;
+  controller = new AbortController();
+
+  const english = language === "en";
+  const model = config.model;
+  const task = kind === "correct" ? "correct" : "translate";
+  const destination = target === "en" ? "English" : "Spanish";
+
+  const system =
+    task === "translate"
+      ? `You are a precise translator. Translate the user's text into ${destination}. ` +
+        "Preserve meaning, tone and formatting. Return only the translation, without quotes, " +
+        "labels or commentary. If the text is already in the target language, return it unchanged."
+      : "You are a careful copy editor. Correct spelling, grammar, punctuation and awkward phrasing " +
+        "in the user's text while preserving its language, meaning, tone and formatting. " +
+        "Return only the corrected text, without quotes, labels or commentary.";
+
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: text },
+  ];
+
+  try {
+    const result = await chatRound(messages, model, sink, false);
+    const clean = result.text.trim();
+    if (!clean) throw new Error("empty task result");
+    sink({ type: "done", mood: "neutral", text: clean, model: "task" });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      sink({ type: "done", mood: "neutral", text: "", cancelled: true });
+    } else {
+      console.warn("[baldborg] task error:", error.message);
+      sink({
+        type: "error",
+        message: error.message,
+        hint: english
+          ? "The local core is not responding. Check that Ollama is running."
+          : "El núcleo local no responde. Verifique que ollama esté en marcha.",
+      });
+    }
+  } finally {
+    busy = false;
+    controller = null;
   }
 }
 

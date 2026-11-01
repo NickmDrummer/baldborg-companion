@@ -67,6 +67,7 @@ interface BaldborgApi {
   setMode: (mode: Mode) => Promise<Mode>;
   quit: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
+  runTask: (kind: "translate" | "correct", text: string, target?: "es" | "en") => Promise<void>;
   cancelChat: () => Promise<void>;
   confirmTool: (id: string, accepted: boolean) => Promise<boolean>;
   speak: (text: string) => Promise<{ wav: Uint8Array; lang: string } | null>;
@@ -112,6 +113,29 @@ function applyAccent(color: string) {
     const [, r, g, b] = match;
     root.style.setProperty("--glow", `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, 0.38)`);
   }
+}
+
+interface TextTask {
+  kind: "translate" | "correct";
+  body: string;
+  target?: "es" | "en";
+}
+
+/** `/translate [es|en] text` and `/correct text` use the local model directly. */
+function parseTextTask(text: string): TextTask | null {
+  const match = text.match(/^\/(translate|correct)\b\s*([\s\S]*)$/i);
+  if (!match) return null;
+  const kind = match[1].toLowerCase() as "translate" | "correct";
+  let body = match[2].trim();
+  let target: "es" | "en" | undefined;
+  if (kind === "translate") {
+    const language = body.match(/^(es|en)\b\s*/i);
+    if (language) {
+      target = language[1].toLowerCase() as "es" | "en";
+      body = body.slice(language[0].length).trim();
+    }
+  }
+  return { kind, body, target };
 }
 
 let nextId = 1;
@@ -416,6 +440,29 @@ export default function App() {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
+
+    const task = parseTextTask(text);
+    if (task) {
+      if (!task.body) {
+        setDraft("");
+        void executeCommand(text);
+        return;
+      }
+      if (busy) return;
+      const assistantId = nextId++;
+      streamingId.current = assistantId;
+      setEntries((current) => [
+        ...current,
+        { id: nextId++, role: "user", text },
+        { id: assistantId, role: "assistant", text: "" },
+      ]);
+      setDraft("");
+      setBusy(true);
+      const target = task.target ?? (language === "es" ? "en" : "es");
+      void api?.runTask(task.kind, task.body, target);
+      return;
+    }
+
     if (text.startsWith("/")) {
       setDraft("");
       void executeCommand(text);

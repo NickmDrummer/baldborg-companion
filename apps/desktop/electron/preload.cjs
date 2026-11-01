@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("baldborg", {
   speak: (text) => ipcRenderer.invoke("voice:speak", text),
   voiceStatus: () => ipcRenderer.invoke("voice:status"),
   sendMessage: (text) => ipcRenderer.invoke("brain:chat", text),
+  runTask: (kind, text, target) => ipcRenderer.invoke("brain:task", kind, text, target),
   cancelChat: () => ipcRenderer.invoke("brain:cancel"),
   confirmTool: (id, accepted) => ipcRenderer.invoke("tools:confirm", id, accepted),
   getHistory: () => ipcRenderer.invoke("brain:history"),

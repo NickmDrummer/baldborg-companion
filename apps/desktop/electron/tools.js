@@ -7,7 +7,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { homedir, loadavg, totalmem, freemem, uptime } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -106,6 +106,8 @@ function toolsConfig() {
     enabled: raw.enabled !== false,
     weather: { defaultCity: "Rosario", ...(raw.weather ?? {}) },
     team: { name: "Rosario Central", ...(raw.team ?? {}) },
+    currency: { defaultHouse: "blue", ...(raw.currency ?? {}) },
+    calendar: { days: 7, paths: [], ...(raw.calendar ?? {}) },
   };
 }
 
@@ -187,7 +189,73 @@ export const TOOL_DEFINITIONS = [
     function: {
       name: "system_status",
       description:
-        "Workstation status: uptime, load average, memory usage and battery level.",
+        "Workstation status: uptime, load average, memory usage, GPU load, VRAM, GPU temperature and battery level.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "convert_units",
+      description:
+        "Convert a numeric value between units of length, mass, temperature, volume, speed, area or digital storage.",
+      parameters: {
+        type: "object",
+        properties: {
+          value: { type: "number", description: "Numeric value to convert." },
+          from: { type: "string", description: "Source unit, e.g. km, mi, kg, lb, °C, °F, L, gal." },
+          to: { type: "string", description: "Target unit, e.g. m, ft, g, oz, °F, mL, mi." },
+        },
+        required: ["value", "from", "to"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_exchange_rate",
+      description:
+        "Argentine exchange rates (dólar oficial, blue, bolsa, tarjeta, mayorista, cripto, euro, real) and optional amount conversion to or from ARS.",
+      parameters: {
+        type: "object",
+        properties: {
+          currency: { type: "string", description: "Currency code: USD, EUR, BRL, CLP or UYU." },
+          house: {
+            type: "string",
+            description: "Rate house for USD: oficial, blue, bolsa, contadoconliqui, tarjeta, mayorista or cripto.",
+          },
+          amount: { type: "number", description: "Optional amount to convert." },
+          direction: {
+            type: "string",
+            description: "to_ars converts the amount to pesos; from_ars converts pesos to the currency.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "calendar_events",
+      description:
+        "Read the client's local calendar from .ics files (and khal if installed) for the next days.",
+      parameters: {
+        type: "object",
+        properties: {
+          days: { type: "number", description: "How many days ahead to look. Defaults to 7." },
+          query: { type: "string", description: "Optional text to filter event titles or locations." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "epic_free_games",
+      description:
+        "Current and upcoming free games on the Epic Games Store, with the dates they can be claimed.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
@@ -663,6 +731,65 @@ async function teamFixtures(teamArg) {
 
 /* ------------------------------------------------------------------ misc -- */
 
+function readSysText(path) {
+  try {
+    return readFileSync(path, "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+function readGpu() {
+  const base = "/sys/class/drm";
+  let cards = [];
+  try {
+    cards = readdirSync(base);
+  } catch {
+    return null;
+  }
+
+  for (const name of cards.filter((entry) => /^card\d+$/.test(entry)).sort()) {
+    const device = join(base, name, "device");
+    const busyPath = join(device, "gpu_busy_percent");
+    if (!existsSync(busyPath)) continue;
+
+    const busy = Number(readSysText(busyPath));
+    const vramUsed = Number(readSysText(join(device, "mem_info_vram_used")));
+    const vramTotal = Number(readSysText(join(device, "mem_info_vram_total")));
+    let temperature = null;
+    try {
+      for (const hwmon of readdirSync(join(device, "hwmon"))) {
+        const raw = Number(readSysText(join(device, "hwmon", hwmon, "temp1_input")));
+        if (Number.isFinite(raw) && raw > 0) {
+          temperature = Math.round(raw / 1000);
+          break;
+        }
+      }
+    } catch {
+      /* no hwmon */
+    }
+
+    const driver = (() => {
+      try {
+        return readlinkSync(join(device, "driver")).split("/").pop();
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!Number.isFinite(busy)) continue;
+    return {
+      card: name,
+      driver,
+      load: busy,
+      vramUsed: Number.isFinite(vramUsed) ? vramUsed : null,
+      vramTotal: Number.isFinite(vramTotal) ? vramTotal : null,
+      temperature,
+    };
+  }
+  return null;
+}
+
 function systemStatus() {
   const batteryPath = "/sys/class/power_supply/BAT0/capacity";
   const battery = existsSync(batteryPath) ? readFileSync(batteryPath, "utf8").trim() : null;
@@ -670,15 +797,35 @@ function systemStatus() {
   const load = loadavg()[0].toFixed(2);
   const hours = Math.floor(uptime() / 3600);
   const minutes = Math.floor((uptime() % 3600) / 60);
+  const gpu = readGpu();
+
+  const gpuEs = gpu
+    ? `GPU ${gpu.load} %` +
+      (gpu.vramUsed != null && gpu.vramTotal
+        ? `, VRAM ${(gpu.vramUsed / 1_073_741_824).toFixed(1)}/${(gpu.vramTotal / 1_073_741_824).toFixed(1)} GB`
+        : "") +
+      (gpu.temperature != null ? `, ${gpu.temperature} °C` : "")
+    : "GPU sin datos";
+  const gpuEn = gpu
+    ? `GPU ${gpu.load} %` +
+      (gpu.vramUsed != null && gpu.vramTotal
+        ? `, VRAM ${(gpu.vramUsed / 1_073_741_824).toFixed(1)}/${(gpu.vramTotal / 1_073_741_824).toFixed(1)} GB`
+        : "") +
+      (gpu.temperature != null ? `, ${gpu.temperature} °C` : "")
+    : "GPU without data";
 
   return {
     uptime: `${hours} h ${minutes} min`,
     load,
     memory: `${memory} % en uso`,
     battery: battery ? `${battery} %` : "sin batería",
+    gpu,
     summary:
       `Equipo encendido ${hours} h ${minutes} min, carga media ${load}, ` +
-      `memoria ${memory} %${battery ? `, batería ${battery} %` : ""}.`,
+      `memoria ${memory} %, ${gpuEs}${battery ? `, batería ${battery} %` : ""}.`,
+    summaryEn:
+      `Workstation up ${hours} h ${minutes} min, load average ${load}, ` +
+      `memory ${memory} %, ${gpuEn}${battery ? `, battery ${battery} %` : ""}.`,
   };
 }
 
@@ -693,6 +840,724 @@ function localTime() {
       hour: "2-digit",
       minute: "2-digit",
     }),
+  };
+}
+
+/* ------------------------------------------------------------------ units -- */
+
+const UNIT_TABLE = [
+  // length, base metre
+  { id: "m", category: "length", factor: 1, aliases: ["m", "metro", "metros", "meter", "meters"] },
+  { id: "km", category: "length", factor: 1000, aliases: ["km", "kilometro", "kilometros", "kilometer", "kilometers", "kilometre", "kilometres"] },
+  { id: "cm", category: "length", factor: 0.01, aliases: ["cm", "centimetro", "centimetros", "centimeter", "centimeters"] },
+  { id: "mm", category: "length", factor: 0.001, aliases: ["mm", "milimetro", "milimetros", "millimeter", "millimeters"] },
+  { id: "mi", category: "length", factor: 1609.344, aliases: ["mi", "milla", "millas", "mile", "miles"] },
+  { id: "yd", category: "length", factor: 0.9144, aliases: ["yd", "yarda", "yardas", "yard", "yards"] },
+  { id: "ft", category: "length", factor: 0.3048, aliases: ["ft", "pie", "pies", "foot", "feet"] },
+  { id: "in", category: "length", factor: 0.0254, aliases: ["in", "pulgada", "pulgadas", "inch", "inches"] },
+  { id: "nmi", category: "length", factor: 1852, aliases: ["nmi", "milla nautica", "millas nauticas", "nautical mile", "nautical miles"] },
+  // mass, base kilogram
+  { id: "kg", category: "mass", factor: 1, aliases: ["kg", "kilo", "kilos", "kilogramo", "kilogramos", "kilogram", "kilograms"] },
+  { id: "g", category: "mass", factor: 0.001, aliases: ["g", "gramo", "gramos", "gram", "grams"] },
+  { id: "mg", category: "mass", factor: 0.000001, aliases: ["mg", "miligramo", "miligramos", "milligram", "milligrams"] },
+  { id: "t", category: "mass", factor: 1000, aliases: ["t", "tonelada", "toneladas", "tonne", "tonnes"] },
+  { id: "lb", category: "mass", factor: 0.45359237, aliases: ["lb", "lbs", "libra", "libras", "pound", "pounds"] },
+  { id: "oz", category: "mass", factor: 0.028349523125, aliases: ["oz", "onza", "onzas", "ounce", "ounces"] },
+  { id: "st", category: "mass", factor: 6.35029318, aliases: ["st", "stone", "stones"] },
+  // temperature, special conversion
+  { id: "c", category: "temperature", aliases: ["c", "°c", "celsius", "centigrado", "centigrados", "centigrade", "grado centigrado", "grados centigrados"] },
+  { id: "f", category: "temperature", aliases: ["f", "°f", "fahrenheit", "grado fahrenheit", "grados fahrenheit"] },
+  { id: "k", category: "temperature", aliases: ["k", "kelvin", "kelvins"] },
+  // volume, base litre
+  { id: "l", category: "volume", factor: 1, aliases: ["l", "litro", "litros", "liter", "liters", "litre", "litres"] },
+  { id: "ml", category: "volume", factor: 0.001, aliases: ["ml", "mililitro", "mililitros", "milliliter", "milliliters"] },
+  { id: "m3", category: "volume", factor: 1000, aliases: ["m3", "metro cubico", "metros cubicos", "cubic meter", "cubic meters"] },
+  { id: "gal", category: "volume", factor: 3.785411784, aliases: ["gal", "galon", "galones", "gallon", "gallons"] },
+  { id: "qt", category: "volume", factor: 0.946352946, aliases: ["qt", "quart", "quarts"] },
+  { id: "pt", category: "volume", factor: 0.473176473, aliases: ["pt", "pinta", "pintas", "pint", "pints"] },
+  { id: "cup", category: "volume", factor: 0.2365882365, aliases: ["cup", "taza", "tazas", "cups"] },
+  { id: "floz", category: "volume", factor: 0.0295735295625, aliases: ["fl oz", "floz", "onza liquida", "onzas liquidas", "fluid ounce", "fluid ounces"] },
+  // speed, base metre/second
+  { id: "ms", category: "speed", factor: 1, aliases: ["m/s", "ms", "metro por segundo", "metros por segundo", "meter per second", "meters per second"] },
+  { id: "kmh", category: "speed", factor: 1 / 3.6, aliases: ["km/h", "kmh", "kph", "kilometro por hora", "kilometros por hora", "kilometer per hour", "kilometers per hour"] },
+  { id: "mph", category: "speed", factor: 0.44704, aliases: ["mph", "mi/h", "milla por hora", "millas por hora", "mile per hour", "miles per hour"] },
+  { id: "knot", category: "speed", factor: 0.514444444, aliases: ["kn", "knot", "knots", "nudo", "nudos"] },
+  // area, base square metre
+  { id: "m2", category: "area", factor: 1, aliases: ["m2", "m²", "metro cuadrado", "metros cuadrados", "square meter", "square meters"] },
+  { id: "km2", category: "area", factor: 1_000_000, aliases: ["km2", "km²", "kilometro cuadrado", "kilometros cuadrados", "square kilometer", "square kilometers"] },
+  { id: "cm2", category: "area", factor: 0.0001, aliases: ["cm2", "cm²", "centimetro cuadrado", "centimetros cuadrados", "square centimeter", "square centimeters"] },
+  { id: "ha", category: "area", factor: 10_000, aliases: ["ha", "hectarea", "hectareas", "hectare", "hectares"] },
+  { id: "acre", category: "area", factor: 4046.8564224, aliases: ["acre", "acres"] },
+  { id: "ft2", category: "area", factor: 0.09290304, aliases: ["ft2", "ft²", "pie cuadrado", "pies cuadrados", "square foot", "square feet"] },
+  { id: "in2", category: "area", factor: 0.00064516, aliases: ["in2", "in²", "pulgada cuadrada", "pulgadas cuadradas", "square inch", "square inches"] },
+  // digital storage, decimal for kB and binary for KiB
+  { id: "b", category: "data", factor: 1, aliases: ["b", "byte", "bytes"] },
+  { id: "kb", category: "data", factor: 1000, aliases: ["kb", "kilobyte", "kilobytes"] },
+  { id: "mb", category: "data", factor: 1_000_000, aliases: ["mb", "megabyte", "megabytes"] },
+  { id: "gb", category: "data", factor: 1_000_000_000, aliases: ["gb", "gigabyte", "gigabytes"] },
+  { id: "tb", category: "data", factor: 1_000_000_000_000, aliases: ["tb", "terabyte", "terabytes"] },
+  { id: "kib", category: "data", factor: 1024, aliases: ["kib", "kibibyte", "kibibytes"] },
+  { id: "mib", category: "data", factor: 1_048_576, aliases: ["mib", "mebibyte", "mebibytes"] },
+  { id: "gib", category: "data", factor: 1_073_741_824, aliases: ["gib", "gibibyte", "gibibytes"] },
+  { id: "tib", category: "data", factor: 1_099_511_627_776, aliases: ["tib", "tebibyte", "tebibytes"] },
+  // time, base second
+  { id: "s", category: "time", factor: 1, aliases: ["s", "seg", "segundo", "segundos", "second", "seconds"] },
+  { id: "min", category: "time", factor: 60, aliases: ["min", "minuto", "minutos", "minute", "minutes"] },
+  { id: "h", category: "time", factor: 3600, aliases: ["h", "hora", "horas", "hour", "hours"] },
+  { id: "d", category: "time", factor: 86400, aliases: ["d", "dia", "dias", "day", "days"] },
+  { id: "week", category: "time", factor: 604800, aliases: ["semana", "semanas", "week", "weeks"] },
+];
+
+function foldUnitText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/²/g, "2")
+    .replace(/³/g, "3")
+    .replace(/[.,;:¿?¡!]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const UNIT_INDEX = new Map();
+for (const unit of UNIT_TABLE) {
+  for (const alias of unit.aliases) {
+    const key = foldUnitText(alias);
+    if (!UNIT_INDEX.has(key)) UNIT_INDEX.set(key, unit);
+  }
+}
+const UNIT_ALIASES = [...UNIT_INDEX.entries()]
+  .map(([alias, unit]) => ({ alias, unit }))
+  .sort((a, b) => b.alias.length - a.alias.length || a.alias.localeCompare(b.alias));
+
+function resolveLeadingUnit(text) {
+  const folded = foldUnitText(text);
+  if (!folded) return null;
+  for (const entry of UNIT_ALIASES) {
+    if (
+      folded === entry.alias ||
+      folded.startsWith(`${entry.alias} `) ||
+      folded.startsWith(`${entry.alias}/`) ||
+      folded.startsWith(`${entry.alias}2`)
+    ) {
+      return { ...entry.unit, length: entry.alias.length };
+    }
+  }
+  return null;
+}
+
+export function resolveUnit(value) {
+  const found = UNIT_INDEX.get(foldUnitText(value));
+  return found ? { id: found.id, category: found.category } : null;
+}
+
+function toCelsius(unit, value) {
+  if (unit.id === "f") return ((value - 32) * 5) / 9;
+  if (unit.id === "k") return value - 273.15;
+  return value;
+}
+
+function fromCelsius(unit, value) {
+  if (unit.id === "f") return (value * 9) / 5 + 32;
+  if (unit.id === "k") return value + 273.15;
+  return value;
+}
+
+function formatConverted(value) {
+  const absolute = Math.abs(value);
+  const digits = absolute >= 1000 ? 2 : absolute >= 1 ? 3 : absolute >= 0.01 ? 4 : 6;
+  return Number(value.toFixed(digits)).toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  });
+}
+
+export function convertUnits({ value, from, to }) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) throw new Error("invalid value");
+  const source = resolveLeadingUnit(from) ?? resolveUnit(from);
+  const target = resolveLeadingUnit(to) ?? resolveUnit(to);
+  if (!source || !target) throw new Error("unknown unit");
+  if (source.category !== target.category) {
+    throw new Error(`cannot convert ${source.category} to ${target.category}`);
+  }
+
+  const converted =
+    source.category === "temperature"
+      ? fromCelsius(target, toCelsius(source, amount))
+      : (amount * source.factor) / target.factor;
+
+  const formatted = formatConverted(converted);
+  const unitLabel = (unit) =>
+    unit.category === "temperature" ? `°${unit.id.toUpperCase()}` : unit.id;
+  return {
+    value: converted,
+    formatted,
+    from: source.id,
+    to: target.id,
+    summary: `${formatConverted(amount)} ${unitLabel(source)} = ${formatted} ${unitLabel(target)}`,
+    summaryEn: `${formatConverted(amount)} ${unitLabel(source)} = ${formatted} ${unitLabel(target)}`,
+  };
+}
+
+/** Best-effort parse of "10 km to miles" / "cuántos litros son 2 galones". */
+export function parseConversionQuery(text) {
+  const folded = String(text ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/²/g, "2");
+
+  const reverse = folded.match(
+    /(?:cuant[oa]s?|how many)\s+(.+?)\s+(?:son|es|are|in|en)\s+(-?\d+(?:[.,]\d+)?)\s*(.+)/,
+  );
+  if (reverse) {
+    const target = resolveLeadingUnit(reverse[1]);
+    const source = resolveLeadingUnit(reverse[3]);
+    if (target && source && target.category === source.category) {
+      return { value: Number(reverse[2].replace(",", ".")), from: source.id, to: target.id };
+    }
+  }
+
+  const direct = folded.match(/(-?\d+(?:[.,]\d+)?)\s*(.+)/);
+  if (!direct) return null;
+  const source = resolveLeadingUnit(direct[2]);
+  if (!source) return null;
+  const rest = direct[2].slice(source.length).trim();
+  const targetMatch = rest.match(/^(?:a|to|en|into|->|→)\s+(.+)$/);
+  if (!targetMatch) return null;
+  const target = resolveLeadingUnit(targetMatch[1]);
+  if (!target || target.category !== source.category) return null;
+  return { value: Number(direct[1].replace(",", ".")), from: source.id, to: target.id };
+}
+
+/* -------------------------------------------------------------- currency -- */
+
+const CURRENCY_HOUSES = {
+  oficial: "oficial",
+  blue: "blue",
+  bolsa: "bolsa",
+  contadoconliqui: "contadoconliqui",
+  "contado con liqui": "contadoconliqui",
+  ccl: "contadoconliqui",
+  tarjeta: "tarjeta",
+  mayorista: "mayorista",
+  cripto: "cripto",
+};
+
+const CURRENCY_NAMES = {
+  USD: { es: "Dólar", en: "Dollar" },
+  EUR: { es: "Euro", en: "Euro" },
+  BRL: { es: "Real", en: "Real" },
+  CLP: { es: "Peso chileno", en: "Chilean peso" },
+  UYU: { es: "Peso uruguayo", en: "Uruguayan peso" },
+};
+
+function houseLabel(house) {
+  return (
+    {
+      oficial: { es: "oficial", en: "official" },
+      blue: { es: "blue", en: "blue" },
+      bolsa: { es: "bolsa", en: "MEP" },
+      contadoconliqui: { es: "contado con liquidación", en: "CCL" },
+      tarjeta: { es: "tarjeta", en: "card" },
+      mayorista: { es: "mayorista", en: "wholesale" },
+      cripto: { es: "cripto", en: "crypto" },
+    }[house] ?? { es: house, en: house }
+  );
+}
+
+function formatMoney(value, currency = "ARS") {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export async function exchangeRate(args = {}) {
+  const currency = String(args.currency ?? "USD").toUpperCase();
+  const house = CURRENCY_HOUSES[foldUnitText(args.house ?? "")] ?? null;
+  const endpoint = currency === "USD" ? "https://dolarapi.com/v1/dolares" : "https://dolarapi.com/v1/cotizaciones";
+  const rows = await getJson(endpoint);
+  const candidates = (Array.isArray(rows) ? rows : []).filter(
+    (row) => String(row.moneda ?? "").toUpperCase() === currency,
+  );
+  if (!candidates.length) throw new Error(`no rate for ${currency}`);
+
+  let row =
+    (house && candidates.find((entry) => entry.casa === house)) ??
+    (currency === "USD"
+      ? candidates.find((entry) => entry.casa === (toolsConfig().currency.defaultHouse ?? "blue"))
+      : null) ??
+    candidates[0];
+  row = { ...row };
+
+  const updated = row.fechaActualizacion ? new Date(row.fechaActualizacion) : new Date();
+  const amount = Number(args.amount);
+  const hasAmount = Number.isFinite(amount) && amount > 0;
+  const direction = args.direction === "from_ars" ? "from_ars" : "to_ars";
+  const conversion = hasAmount
+    ? direction === "from_ars"
+      ? amount / row.venta
+      : amount * row.venta
+    : null;
+
+  const nameEs =
+    currency === "USD"
+      ? CURRENCY_NAMES.USD.es
+      : row.nombre || CURRENCY_NAMES[currency]?.es || currency;
+  const nameEn = CURRENCY_NAMES[currency]?.en || nameEs;
+  const houseEs = houseLabel(row.casa).es;
+  const houseEn = houseLabel(row.casa).en;
+  const stamp = updated.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const amountLineEs = hasAmount
+    ? direction === "from_ars"
+      ? ` · ${formatMoney(amount)} = ${formatMoney(conversion, currency)}`
+      : ` · ${formatMoney(amount, currency)} = ${formatMoney(conversion)}`
+    : "";
+  const amountLineEn = hasAmount
+    ? direction === "from_ars"
+      ? ` · ${formatMoney(amount)} = ${formatMoney(conversion, currency)}`
+      : ` · ${formatMoney(amount, currency)} = ${formatMoney(conversion)}`
+    : "";
+
+  return {
+    currency,
+    house: row.casa,
+    name: nameEs,
+    buy: row.compra,
+    sell: row.venta,
+    updatedAt: updated.toISOString(),
+    amount: hasAmount ? amount : null,
+    direction,
+    converted: conversion,
+    summary:
+      `${nameEs} ${houseEs}: compra ${formatMoney(row.compra)} · venta ${formatMoney(row.venta)}` +
+      ` (${stamp})${amountLineEs}.`,
+    summaryEn:
+      `${nameEn} (${houseEn}): buy ${formatMoney(row.compra)} · sell ${formatMoney(row.venta)}` +
+      ` (${stamp})${amountLineEn}.`,
+  };
+}
+
+/** Detect "¿a cuánto está el blue?" / "100 dólares a pesos" for prefetching. */
+export function parseCurrencyQuery(text) {
+  const folded = foldUnitText(text);
+  const mentionsCurrency =
+    /\b(dolar|dolares|dollar|dollars|usd|euro|euros|eur|real|reales|brl|peso|pesos|ars|cotizacion|cambio|exchange rate)\b/.test(
+      folded,
+    );
+  if (!mentionsCurrency) return null;
+  const hasAmount = /\d+(?:[.,]\d+)?\s*(?:mil\s+)?(?:dolares?|dollars?|usd|euros?|eur|reales?|brl|pesos?|ars)\b/.test(
+    folded,
+  );
+  if (
+    !hasAmount &&
+    !/\b(cuanto|a cuanto|precio|valor|cotiza|cotizacion|rate|exchange|sale|esta|conviert|pasar|equivale)\b/.test(
+      folded,
+    )
+  ) {
+    return null;
+  }
+
+  let currency = "USD";
+  if (/\b(euro|euros|eur)\b/.test(folded)) currency = "EUR";
+  else if (/\b(real|reales|brl)\b/.test(folded)) currency = "BRL";
+
+  let house;
+  for (const [alias, id] of Object.entries(CURRENCY_HOUSES)) {
+    if (new RegExp(`\\b${alias.replace(/ /g, "\\s+")}\\b`).test(folded)) {
+      house = id;
+      break;
+    }
+  }
+
+  let amount = null;
+  let direction = "to_ars";
+  const inPesos = folded.match(/(\d+(?:[.,]\d+)?)\s*(?:mil\s+)?(?:pesos?|ars)\b/);
+  const inCurrency = folded.match(
+    /(\d+(?:[.,]\d+)?)\s*(?:mil\s+)?(?:dolares?|dollars?|usd|euros?|eur|reales?|brl)\b/,
+  );
+  if (inPesos && /(dolar|dollar|usd|euro|eur|real|brl)/.test(folded)) {
+    amount = Number(inPesos[1].replace(",", "."));
+    direction = "from_ars";
+  } else if (inCurrency) {
+    amount = Number(inCurrency[1].replace(",", "."));
+    direction = "to_ars";
+  }
+
+  return { currency, ...(house ? { house } : {}), ...(amount ? { amount, direction } : {}) };
+}
+
+/* -------------------------------------------------------------- calendar -- */
+
+const CALENDAR_DIRS = [
+  join(homedir(), ".calendars"),
+  join(homedir(), ".local", "share", "calendars"),
+  join(homedir(), ".local", "share", "khal", "calendars"),
+  join(homedir(), ".config", "calendars"),
+  join(homedir(), "Calendars"),
+  join(homedir(), "Documents", "Calendars"),
+];
+
+function collectIcsFiles(paths, depth = 0) {
+  const files = [];
+  if (depth > 4) return files;
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    let entries;
+    try {
+      entries = readdirSync(path, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = join(path, entry.name);
+      if (entry.isDirectory()) files.push(...collectIcsFiles([full], depth + 1));
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith(".ics")) files.push(full);
+    }
+  }
+  return files;
+}
+
+function unfoldIcs(text) {
+  return text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+}
+
+function parseIcsDate(rawValue, params) {
+  const value = String(rawValue ?? "").trim();
+  if (/^\d{8}$/.test(value)) {
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6)) - 1;
+    const day = Number(value.slice(6, 8));
+    return { date: new Date(year, month, day), allDay: true };
+  }
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, zulu] = match;
+  const parts = [Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)];
+  const date = zulu
+    ? new Date(Date.UTC(...parts))
+    : params?.TZID
+      ? new Date(new Date(Date.UTC(...parts)).toLocaleString("en-US", { timeZone: params.TZID }))
+      : new Date(...parts);
+  return { date, allDay: false };
+}
+
+function parseIcsProperty(line) {
+  const colon = line.indexOf(":");
+  if (colon < 0) return null;
+  const left = line.slice(0, colon);
+  const value = line.slice(colon + 1);
+  const [name, ...paramParts] = left.split(";");
+  const params = {};
+  for (const part of paramParts) {
+    const [key, ...rest] = part.split("=");
+    params[key.toUpperCase()] = rest.join("=");
+  }
+  return { name: name.toUpperCase(), params, value };
+}
+
+function parseRrule(value) {
+  const rule = {};
+  for (const part of String(value ?? "").split(";")) {
+    const [key, raw] = part.split("=");
+    if (!key || raw === undefined) continue;
+    rule[key.toUpperCase()] = raw;
+  }
+  return rule;
+}
+
+function expandEvent(event, windowEnd) {
+  const occurrences = [];
+  const duration = event.end ? Math.max(0, event.end.getTime() - event.start.getTime()) : 0;
+  const rule = event.rrule;
+  if (!rule) {
+    if (event.start <= windowEnd) occurrences.push(event);
+    return occurrences;
+  }
+
+  const interval = Math.max(1, Number(rule.INTERVAL ?? 1));
+  const count = rule.COUNT ? Math.max(0, Number(rule.COUNT)) : null;
+  const until = rule.UNTIL ? parseIcsDate(rule.UNTIL)?.date : null;
+  const frequency = String(rule.FREQ ?? "").toUpperCase();
+  let current = new Date(event.start);
+  let index = 0;
+
+  // Skip ahead for daily and weekly rules so a calendar from 2020 does not
+  // burn the iteration budget before reaching this week.
+  if (!count && (frequency === "DAILY" || frequency === "WEEKLY")) {
+    const step = (frequency === "DAILY" ? 86_400_000 : 604_800_000) * interval;
+    const start = event.start.getTime();
+    const now = Date.now();
+    const skip = Math.max(0, Math.floor((now - start) / step));
+    index = skip;
+    current = new Date(start + skip * step);
+  }
+
+  for (let guard = 0; guard < 600; guard += 1) {
+    if (count !== null && index >= count) break;
+    if (until && current > until) break;
+    if (current > windowEnd) break;
+    if (current.getTime() + duration >= Date.now() - 3_600_000) {
+      occurrences.push({ ...event, start: new Date(current), end: new Date(current.getTime() + duration) });
+    }
+    index += 1;
+    if (frequency === "DAILY") current.setDate(current.getDate() + interval);
+    else if (frequency === "WEEKLY") current.setDate(current.getDate() + 7 * interval);
+    else if (frequency === "MONTHLY") current.setMonth(current.getMonth() + interval);
+    else if (frequency === "YEARLY") current.setFullYear(current.getFullYear() + interval);
+    else break;
+  }
+  return occurrences;
+}
+
+export function parseIcsEvents(text, windowEnd = new Date(Date.now() + 7 * 86_400_000)) {
+  const events = [];
+  let current = null;
+
+  for (const line of unfoldIcs(text)) {
+    if (line === "BEGIN:VEVENT") {
+      current = {};
+      continue;
+    }
+    if (line === "END:VEVENT") {
+      if (current?.start) {
+        for (const occurrence of expandEvent(current, windowEnd)) events.push(occurrence);
+      }
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    const property = parseIcsProperty(line);
+    if (!property) continue;
+    if (property.name === "DTSTART") {
+      const start = parseIcsDate(property.value, property.params);
+      current.start = start?.date;
+      current.allDay = Boolean(start?.allDay);
+    } else if (property.name === "DTEND") {
+      current.end = parseIcsDate(property.value, property.params)?.date;
+    }
+    else if (property.name === "SUMMARY") current.title = property.value.replace(/\\,/g, ",").replace(/\\;/g, ";");
+    else if (property.name === "LOCATION") current.location = property.value.replace(/\\,/g, ",").replace(/\\;/g, ";");
+    else if (property.name === "RRULE") current.rrule = parseRrule(property.value);
+  }
+
+  return events
+    .filter((event) => event.start instanceof Date && !Number.isNaN(event.start.getTime()))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+function formatCalendarEvent(event, english) {
+  const locale = english ? "en-GB" : "es-AR";
+  const date = event.allDay
+    ? event.start.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" })
+    : event.start.toLocaleString(locale, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+  return {
+    title: event.title || (english ? "Untitled event" : "Evento sin título"),
+    start: event.start.toISOString(),
+    allDay: Boolean(event.allDay),
+    location: event.location || null,
+    when: date,
+  };
+}
+
+export async function calendarEvents(args = {}) {
+  const days = Math.min(365, Math.max(1, Number(args.days) || toolsConfig().calendar.days || 7));
+  const configured = toolsConfig().calendar.paths ?? [];
+  const paths = (Array.isArray(configured) && configured.length ? configured : CALENDAR_DIRS).map((path) =>
+    path.startsWith("~") ? join(homedir(), path.slice(1)) : path,
+  );
+  const files = collectIcsFiles(paths);
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + days * 86_400_000);
+  const query = String(args.query ?? "").trim().toLowerCase();
+  const events = [];
+
+  for (const file of files) {
+    try {
+      const text = readFileSync(file, "utf8");
+      for (const event of parseIcsEvents(text, windowEnd)) {
+        if (event.start < new Date(now.getFullYear(), now.getMonth(), now.getDate())) continue;
+        if (event.start > windowEnd) continue;
+        if (
+          query &&
+          !`${event.title ?? ""} ${event.location ?? ""}`.toLowerCase().includes(query)
+        ) {
+          continue;
+        }
+        events.push(event);
+      }
+    } catch (error) {
+      console.warn(`[tools] calendar ${file}: ${error.message}`);
+    }
+  }
+
+  events.sort((a, b) => a.start.getTime() - b.start.getTime());
+  const limited = events.slice(0, 30);
+  const items = limited.map((event) => formatCalendarEvent(event, false));
+  const itemsEn = limited.map((event) => formatCalendarEvent(event, true));
+
+  const summary = items.length
+    ? `Agenda (${items.length}): ${items
+        .map((item) => `${item.when} · ${item.title}${item.location ? ` (${item.location})` : ""}`)
+        .join(" · ")}.`
+    : `No hay eventos en los próximos ${days} días en el calendario local.`;
+  const summaryEn = itemsEn.length
+    ? `Calendar (${itemsEn.length}): ${itemsEn
+        .map((item) => `${item.when} · ${item.title}${item.location ? ` (${item.location})` : ""}`)
+        .join(" · ")}.`
+    : `No events in the next ${days} days in the local calendar.`;
+
+  return {
+    days,
+    paths: files.length,
+    count: items.length,
+    events: items,
+    eventsEn: itemsEn,
+    summary,
+    summaryEn,
+  };
+}
+
+/* ------------------------------------------------------------------ epic -- */
+
+function epicUrl(element) {
+  const slug =
+    element.catalogNs?.mappings?.[0]?.pageSlug ??
+    element.productSlug ??
+    element.urlSlug ??
+    null;
+  return slug ? `https://store.epicgames.com/en-US/p/${slug}` : "https://store.epicgames.com/en-US/free-games";
+}
+
+function epicOffers(element) {
+  const promotions = element.promotions ?? {};
+  const offers = [];
+  for (const key of ["promotionalOffers", "upcomingPromotionalOffers"]) {
+    for (const group of promotions[key] ?? []) {
+      for (const offer of group.promotionalOffers ?? []) {
+        const percentage = Number(offer.discountSetting?.discountPercentage);
+        if (percentage !== 0) continue;
+        const start = new Date(offer.startDate);
+        const end = new Date(offer.endDate);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+        offers.push({ start, end });
+      }
+    }
+  }
+  return offers.sort((a, b) => a.start - b.start);
+}
+
+function formatEpicDate(date, english) {
+  return date.toLocaleString(english ? "en-GB" : "es-AR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export async function epicFreeGames() {
+  const data = await getJson(
+    "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US",
+    15_000,
+  );
+  const elements = data?.data?.Catalog?.searchStore?.elements ?? [];
+  const now = Date.now();
+  const current = [];
+  const upcoming = [];
+  const seen = new Set();
+
+  for (const element of elements) {
+    if (!element?.title || seen.has(element.title)) continue;
+    for (const offer of epicOffers(element)) {
+      const start = offer.start.getTime();
+      const end = offer.end.getTime();
+      const game = {
+        title: element.title,
+        url: epicUrl(element),
+        start: offer.start.toISOString(),
+        end: offer.end.toISOString(),
+      };
+      if (start <= now && end >= now) {
+        current.push({ ...game, when: formatEpicDate(offer.end, false), whenEn: formatEpicDate(offer.end, true) });
+        seen.add(element.title);
+        break;
+      }
+      if (start > now && start <= now + 30 * 86_400_000) {
+        upcoming.push({
+          ...game,
+          when: formatEpicDate(offer.start, false),
+          whenEn: formatEpicDate(offer.start, true),
+          until: formatEpicDate(offer.end, false),
+          untilEn: formatEpicDate(offer.end, true),
+        });
+        seen.add(element.title);
+        break;
+      }
+    }
+  }
+
+  upcoming.sort((a, b) => new Date(a.start) - new Date(b.start));
+  current.sort((a, b) => new Date(a.end) - new Date(b.end));
+
+  const parts = [];
+  if (current.length) {
+    parts.push(
+      `Gratis ahora en Epic: ${current
+        .map((game) => `${game.title} (hasta ${game.when})`)
+        .join(" · ")}.`,
+    );
+  }
+  if (upcoming.length) {
+    parts.push(
+      `Próximamente: ${upcoming
+        .slice(0, 4)
+        .map((game) => `${game.title} (${game.when}–${game.until})`)
+        .join(" · ")}.`,
+    );
+  }
+  if (!parts.length) parts.push("Epic no tiene juegos gratis anunciados en este momento.");
+
+  const partsEn = [];
+  if (current.length) {
+    partsEn.push(
+      `Free on Epic now: ${current.map((game) => `${game.title} (until ${game.whenEn})`).join(" · ")}.`,
+    );
+  }
+  if (upcoming.length) {
+    partsEn.push(
+      `Coming soon: ${upcoming
+        .slice(0, 4)
+        .map((game) => `${game.title} (${game.whenEn}–${game.untilEn})`)
+        .join(" · ")}.`,
+    );
+  }
+  if (!partsEn.length) partsEn.push("Epic has no free games announced right now.");
+
+  return {
+    current,
+    upcoming,
+    summary: parts.join(" "),
+    summaryEn: partsEn.join(" "),
   };
 }
 
@@ -757,7 +1622,36 @@ export function prepareTool(name, rawArgs) {
       return { summary: "Consultar la hora", run: async () => ({ ok: true, ...localTime() }) };
 
     case "system_status":
-      return { summary: "Consultar el estado del equipo", run: async () => ({ ok: true, ...systemStatus() }) };
+      return {
+        summary: "Consultar el estado del equipo",
+        run: async () => ({ ok: true, ...systemStatus() }),
+      };
+
+    case "convert_units":
+      return {
+        summary: `Convertir ${args.value ?? ""} ${args.from ?? ""} a ${args.to ?? ""}`,
+        run: async () => ({ ok: true, ...convertUnits(args) }),
+      };
+
+    case "get_exchange_rate":
+      return {
+        summary: `Consultar cotización ${args.currency ?? "USD"}${
+          args.house ? ` ${args.house}` : ""
+        }`,
+        run: async () => ({ ok: true, ...(await exchangeRate(args)) }),
+      };
+
+    case "calendar_events":
+      return {
+        summary: `Consultar la agenda${args.days ? ` (${args.days} días)` : ""}`,
+        run: async () => ({ ok: true, ...(await calendarEvents(args)) }),
+      };
+
+    case "epic_free_games":
+      return {
+        summary: "Consultar los juegos gratis de Epic",
+        run: async () => ({ ok: true, ...(await epicFreeGames()) }),
+      };
 
     case "team_fixtures":
       return {

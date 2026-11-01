@@ -9,7 +9,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatFixture } from "../apps/desktop/electron/tools.js";
+import {
+  convertUnits,
+  formatFixture,
+  parseConversionQuery,
+  parseCurrencyQuery,
+  parseIcsEvents,
+} from "../apps/desktop/electron/tools.js";
 import { detectLanguage } from "../apps/desktop/electron/voice.js";
 import {
   parseBeatInterval,
@@ -180,4 +186,75 @@ test("natural memory understands save, forget and list", () => {
   });
   assert.deepEqual(parseMemoryIntent("¿Qué recuerdas de mí?"), { action: "list" });
   assert.equal(parseMemoryIntent("hola, ¿cómo estás?"), null);
+});
+
+test("unit conversion handles metric, imperial and temperature", () => {
+  const km = convertUnits({ value: 10, from: "km", to: "mi" });
+  assert.equal(km.value.toFixed(3), "6.214");
+  assert.match(km.summary, /10 km = 6\.214 mi/);
+  const f = convertUnits({ value: 100, from: "°F", to: "°C" });
+  assert.equal(f.value.toFixed(3), "37.778");
+  assert.match(f.summary, /100 °F = 37\.778 °C/);
+  assert.throws(() => convertUnits({ value: 1, from: "kg", to: "km" }), /cannot convert/);
+});
+
+test("natural conversion queries parse direct and reverse wording", () => {
+  assert.deepEqual(parseConversionQuery("convert 70 kg to pounds"), {
+    value: 70,
+    from: "kg",
+    to: "lb",
+  });
+  assert.deepEqual(parseConversionQuery("¿cuántas millas son 10 kilómetros?"), {
+    value: 10,
+    from: "km",
+    to: "mi",
+  });
+  assert.deepEqual(parseConversionQuery("2 galones a litros"), {
+    value: 2,
+    from: "gal",
+    to: "l",
+  });
+});
+
+test("currency queries pick house, amount and direction", () => {
+  assert.deepEqual(parseCurrencyQuery("¿a cuánto está el dólar blue?"), {
+    currency: "USD",
+    house: "blue",
+  });
+  assert.deepEqual(parseCurrencyQuery("100 dólares a pesos"), {
+    currency: "USD",
+    amount: 100,
+    direction: "to_ars",
+  });
+  assert.deepEqual(parseCurrencyQuery("¿cuántos dólares son 150000 pesos?"), {
+    currency: "USD",
+    amount: 150000,
+    direction: "from_ars",
+  });
+  assert.equal(parseCurrencyQuery("¿cómo está el clima?"), null);
+});
+
+test("ics parser reads all-day and recurring events", () => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "BEGIN:VEVENT",
+    "DTSTART;VALUE=DATE:20261102",
+    "SUMMARY:Dentist",
+    "LOCATION:Centro",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "DTSTART:20260101T180000",
+    "DTEND:20260101T190000",
+    "RRULE:FREQ=WEEKLY;INTERVAL=1",
+    "SUMMARY:Standup",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\n");
+  const events = parseIcsEvents(ics, new Date("2026-11-30T23:59:59Z"));
+  const dentist = events.find((event) => event.title === "Dentist");
+  assert.equal(dentist.allDay, true);
+  assert.equal(dentist.location, "Centro");
+  const standups = events.filter((event) => event.title === "Standup");
+  assert.ok(standups.length >= 4);
+  assert.ok(standups.every((event) => event.start.getDay() === 4));
 });
