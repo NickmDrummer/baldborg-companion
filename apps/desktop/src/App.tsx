@@ -514,6 +514,7 @@ export default function App() {
         ) : (
           <div className="statusline">
             <span className="dot" />
+            <span className="pill-grip" aria-hidden="true">⠿</span>
             BALDBORG ·{" "}
             {muted ? t.muted : busy ? t.processing : warming ? t.warming : t.idle}
           </div>

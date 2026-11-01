@@ -109,7 +109,7 @@ function clockContext() {
   return (
     `Runtime context: it is ${time} on ${day} on the client's workstation. ` +
     "Weather, reminders, clock, workstation status, the client's football team, dollar and currency rates, " +
-    "unit conversion, the local calendar and Epic free games are available through tools. " +
+    "unit conversion, the local calendar, Epic free games and Steam free-to-keep games are available through tools. " +
     "Do not repeat phrases or closings you have already used in this conversation."
   );
 }
@@ -330,7 +330,49 @@ function needsCalendarTool(text) {
 }
 
 function needsEpicTool(text) {
-  return /\b(epic|juegos gratis|juego gratis|free games?|gratis en epic)\b/i.test(text);
+  return /\bepic\b/i.test(text);
+}
+
+function needsSteamTool(text) {
+  return (
+    /\bsteam\b/i.test(text) &&
+    /\b(gratis|free|reclam|claim|keep|100\s*%|descuento|discount)\b/i.test(text)
+  );
+}
+
+/** Pure lookup queries are answered from the source, not paraphrased. */
+function routeFreeGames(text) {
+  const mentionsEpic = /\bepic\b/i.test(text);
+  const mentionsSteam = /\bsteam\b/i.test(text);
+  if (!mentionsEpic && !mentionsSteam) return null;
+  if (!/\b(juegos? gratis|free games?|free to keep|gratis|reclamar|claim|100\s*%)\b/i.test(text)) {
+    return null;
+  }
+  return mentionsEpic ? { kind: "epic" } : { kind: "steam" };
+}
+
+async function runFreeGamesRoute(route, sink, userText, english) {
+  const tool = route.kind === "epic" ? "epic_free_games" : "steam_free_games";
+  sink({ type: "tool", name: tool, status: "running" });
+  let text = english
+    ? "I could not read the store right now."
+    : "No pude leer la tienda en este momento.";
+  try {
+    const prepared = prepareTool(tool, {});
+    const data = await prepared.run();
+    text = `[[mood:neutral]] ${english ? data.summaryEn : data.summary}`;
+  } catch (error) {
+    console.warn(`[baldborg] ${tool} route failed:`, error.message);
+  }
+  sink({ type: "tool", name: tool, status: "done" });
+  const parsed = parseMood(text);
+  history = trimHistory([
+    ...history,
+    { role: "user", content: userText },
+    { role: "assistant", content: parsed.text },
+  ]);
+  saveHistory();
+  sink({ type: "done", mood: parsed.mood, text: parsed.text, model: "router" });
 }
 
 function calendarDays(text) {
@@ -776,6 +818,29 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     }
   }
 
+  if (toolsEnabled() && needsSteamTool(text)) {
+    try {
+      const steam = await prepareTool("steam_free_games", {}).run();
+      messages.push({
+        role: "system",
+        content: authoritativeToolBrief(
+          english,
+          "steam_free_games",
+          "steam_free_games",
+          english ? steam.summaryEn : steam.summary,
+        ),
+      });
+    } catch (error) {
+      console.warn("[baldborg] steam prefetch failed:", error.message);
+      messages.push({
+        role: "system",
+        content: english
+          ? "The Steam free-to-keep lookup failed. Say so plainly; do not invent games."
+          : "La consulta de juegos gratis de Steam falló. Dígalo claramente; no invente juegos.",
+      });
+    }
+  }
+
   let finalText = "";
   let reminderToolRan = false;
 
@@ -799,6 +864,14 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     const query = routeReminderQuery(text);
     if (query) {
       await runReminderQuery(query, sink, text);
+      busy = false;
+      controller = null;
+      return;
+    }
+
+    const freeGames = toolsEnabled() ? routeFreeGames(text) : null;
+    if (freeGames) {
+      await runFreeGamesRoute(freeGames, sink, text, english);
       busy = false;
       controller = null;
       return;

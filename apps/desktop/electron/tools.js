@@ -120,10 +120,22 @@ function run(command, args, timeout = 12_000) {
   });
 }
 
-async function getJson(url, timeout = 12_000) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+async function getJson(url, timeout = 12_000, headers = {}) {
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.json();
+}
+
+async function getText(url, timeout = 15_000) {
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Baldborg/1.0",
+      "accept-language": "en-US,en;q=0.9",
+    },
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  return response.text();
 }
 
 /* ------------------------------------------------------------------ tools -- */
@@ -256,6 +268,15 @@ export const TOOL_DEFINITIONS = [
       name: "epic_free_games",
       description:
         "Current and upcoming free games on the Epic Games Store, with the dates they can be claimed.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "steam_free_games",
+      description:
+        "Current Steam games that are 100% off for a limited time and stay in the library after claiming (free to keep), with their end date.",
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
@@ -1466,13 +1487,43 @@ function epicOffers(element) {
 }
 
 function formatEpicDate(date, english) {
-  return date.toLocaleString(english ? "en-GB" : "es-AR", {
+  return date.toLocaleDateString(english ? "en-GB" : "es-AR", {
     day: "numeric",
     month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
   });
+}
+
+/** Quote titles and group them by their single date label. */
+function epicGroups(games, field, english, prefix) {
+  const groups = new Map();
+  for (const game of games) {
+    const label = game[field];
+    if (!label) continue;
+    const titles = groups.get(label) ?? [];
+    titles.push(`"${game.title}"`);
+    groups.set(label, titles);
+  }
+  return [...groups.entries()].map(
+    ([label, titles]) => `${titles.join(", ")} (${prefix ? `${english ? "Until" : "hasta"} ` : ""}${label})`,
+  );
+}
+
+export function formatEpicSummary(current, upcoming, english = false) {
+  const parts = [];
+  if (current.length) {
+    const groups = epicGroups(current, "endLabel", english, true);
+    parts.push(
+      `${english ? "Free on Epic now" : "Gratis en Epic ahora"}: ${groups.join("; ")}.`,
+    );
+  }
+  if (upcoming.length) {
+    const groups = epicGroups(upcoming, "startLabel", english, false);
+    parts.push(`${english ? "Coming soon" : "Próximamente"}: ${groups.join("; ")}.`);
+  }
+  if (!parts.length) {
+    return english ? "Epic has no free games announced right now." : "Epic no tiene juegos gratis anunciados en este momento.";
+  }
+  return parts.join(" ");
 }
 
 export async function epicFreeGames() {
@@ -1498,17 +1549,19 @@ export async function epicFreeGames() {
         end: offer.end.toISOString(),
       };
       if (start <= now && end >= now) {
-        current.push({ ...game, when: formatEpicDate(offer.end, false), whenEn: formatEpicDate(offer.end, true) });
+        current.push({
+          ...game,
+          endLabel: formatEpicDate(offer.end, false),
+          endLabelEn: formatEpicDate(offer.end, true),
+        });
         seen.add(element.title);
         break;
       }
       if (start > now && start <= now + 30 * 86_400_000) {
         upcoming.push({
           ...game,
-          when: formatEpicDate(offer.start, false),
-          whenEn: formatEpicDate(offer.start, true),
-          until: formatEpicDate(offer.end, false),
-          untilEn: formatEpicDate(offer.end, true),
+          startLabel: formatEpicDate(offer.start, false),
+          startLabelEn: formatEpicDate(offer.start, true),
         });
         seen.add(element.title);
         break;
@@ -1519,45 +1572,108 @@ export async function epicFreeGames() {
   upcoming.sort((a, b) => new Date(a.start) - new Date(b.start));
   current.sort((a, b) => new Date(a.end) - new Date(b.end));
 
-  const parts = [];
-  if (current.length) {
-    parts.push(
-      `Gratis ahora en Epic: ${current
-        .map((game) => `${game.title} (hasta ${game.when})`)
-        .join(" · ")}.`,
-    );
-  }
-  if (upcoming.length) {
-    parts.push(
-      `Próximamente: ${upcoming
-        .slice(0, 4)
-        .map((game) => `${game.title} (${game.when}–${game.until})`)
-        .join(" · ")}.`,
-    );
-  }
-  if (!parts.length) parts.push("Epic no tiene juegos gratis anunciados en este momento.");
-
-  const partsEn = [];
-  if (current.length) {
-    partsEn.push(
-      `Free on Epic now: ${current.map((game) => `${game.title} (until ${game.whenEn})`).join(" · ")}.`,
-    );
-  }
-  if (upcoming.length) {
-    partsEn.push(
-      `Coming soon: ${upcoming
-        .slice(0, 4)
-        .map((game) => `${game.title} (${game.whenEn}–${game.untilEn})`)
-        .join(" · ")}.`,
-    );
-  }
-  if (!partsEn.length) partsEn.push("Epic has no free games announced right now.");
+  const currentEn = current.map((game) => ({ ...game, endLabel: game.endLabelEn }));
+  const upcomingEn = upcoming.map((game) => ({ ...game, startLabel: game.startLabelEn }));
+  const summary = formatEpicSummary(current, upcoming, false);
+  const summaryEn = formatEpicSummary(currentEn, upcomingEn, true);
 
   return {
     current,
     upcoming,
-    summary: parts.join(" "),
-    summaryEn: partsEn.join(" "),
+    summary,
+    summaryEn,
+  };
+}
+
+/* ----------------------------------------------------------------- steam -- */
+
+const STEAM_UA = "Mozilla/5.0 (X11; Linux x86_64) Baldborg/1.0";
+
+function steamSearchUrl() {
+  return (
+    "https://store.steampowered.com/search/results/?query&start=0&count=100" +
+    "&infinite=1&specials=1&maxprice=free&ndl=1&category1=998&cc=us&l=en"
+  );
+}
+
+/** Parse the Steam search JSON into appid/title candidates. */
+export function parseSteamSearch(payload) {
+  const html = String(payload?.results_html ?? "");
+  const found = new Map();
+  for (const row of html.matchAll(/<a\b[^>]*data-ds-appid="(\d+)"[\s\S]*?<\/a>/g)) {
+    const block = row[0];
+    // The search page is the cheap first pass: only 100% discount rows.
+    if (!/-100%/.test(block)) continue;
+    const title = block.match(/<span class="title">([^<]+)<\/span>/);
+    if (!found.has(row[1]) && title) found.set(row[1], title[1].trim());
+  }
+  return [...found.entries()].map(([id, title]) => ({
+    id,
+    title,
+    url: `https://store.steampowered.com/app/${id}/`,
+  }));
+}
+
+/**
+ * Steam marks a limited 100% promotion with is_free_to_keep and an end
+ * timestamp. Permanently free games and free weekends do not have both.
+ */
+export function parseSteamFreeKeepPage(html) {
+  const normalized = String(html).replace(/&quot;/g, '"').replace(/&#34;/g, '"');
+  if (!/"is_free_to_keep"\s*:\s*1/.test(normalized)) return null;
+  const ends = normalized.match(/"free_to_keep_ends"\s*:\s*(\d+)/);
+  if (!ends) return null;
+  const date = new Date(Number(ends[1]) * 1000);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatSteamFreeGames(games, english = false) {
+  if (!games.length) {
+    return english ? "No free-to-keep games on Steam right now." : "No hay juegos gratis para reclamar en Steam ahora mismo.";
+  }
+  const groups = new Map();
+  for (const game of games) {
+    const label = english ? game.endLabelEn : game.endLabel;
+    const titles = groups.get(label) ?? [];
+    titles.push(`"${game.title}"`);
+    groups.set(label, titles);
+  }
+  const lines = [...groups.entries()].map(
+    ([label, titles]) =>
+      `${titles.join(", ")} (${english ? "Until" : "hasta"} ${label})`,
+  );
+  return `${english ? "Free to keep on Steam" : "Gratis para reclamar en Steam"}: ${lines.join("; ")}.`;
+}
+
+export async function steamFreeGames() {
+  const payload = await getJson(steamSearchUrl(), 15_000, {
+    "user-agent": STEAM_UA,
+    "accept-language": "en-US,en;q=0.9",
+  });
+  const candidates = parseSteamSearch(payload);
+  const games = [];
+
+  for (const candidate of candidates) {
+    try {
+      const html = await getText(candidate.url + "?cc=us&l=en", 15_000);
+      const ends = parseSteamFreeKeepPage(html);
+      if (!ends) continue;
+      games.push({
+        ...candidate,
+        endsAt: ends.toISOString(),
+        endLabel: formatEpicDate(ends, false),
+        endLabelEn: formatEpicDate(ends, true),
+      });
+    } catch (error) {
+      console.warn(`[tools] steam ${candidate.id}: ${error.message}`);
+    }
+  }
+
+  games.sort((a, b) => new Date(a.endsAt) - new Date(b.endsAt));
+  return {
+    games,
+    summary: formatSteamFreeGames(games, false),
+    summaryEn: formatSteamFreeGames(games, true),
   };
 }
 
@@ -1651,6 +1767,12 @@ export function prepareTool(name, rawArgs) {
       return {
         summary: "Consultar los juegos gratis de Epic",
         run: async () => ({ ok: true, ...(await epicFreeGames()) }),
+      };
+
+    case "steam_free_games":
+      return {
+        summary: "Consultar los juegos gratis para reclamar en Steam",
+        run: async () => ({ ok: true, ...(await steamFreeGames()) }),
       };
 
     case "team_fixtures":

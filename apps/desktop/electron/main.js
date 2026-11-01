@@ -182,6 +182,7 @@ let mode = "passive";
 let chatSide = "stacked";
 let headAnchorX = null;
 let drag = null;
+let pillDragTimer = null;
 let lastMood = "neutral";
 let warming = false;
 
@@ -467,6 +468,7 @@ function beginDrag() {
   const monitor = monitorForClient(client);
   if (!pointer || !client?.at || !monitor) return;
   drag = {
+    source: "chat",
     pointerX: pointer.x,
     pointerY: pointer.y,
     originX: client.at[0],
@@ -500,11 +502,83 @@ function dragTo() {
   void hyprDispatch(`hl.dsp.window.move({ x = ${x}, y = ${y}, window = "class:${WM_CLASS}" })`);
 }
 
+function insideRect(pointer, x, y, width, height) {
+  return (
+    pointer.x >= x &&
+    pointer.x <= x + width &&
+    pointer.y >= y &&
+    pointer.y <= y + height
+  );
+}
+
+/**
+ * Super + LMB on the idle pill. If the pointer is not over the overlay, fall
+ * back to Hyprland's normal window drag.
+ */
+function beginPillDrag() {
+  const pointer = cursorPosition();
+  const client = hyprlandClient();
+  if (!pointer || !client?.at || !client.size) {
+    void hyprDispatch(`hl.dsp.window.drag()`);
+    return;
+  }
+
+  const monitor = monitorForClient(client);
+  if (!monitor) return;
+  const insideOverlay = insideRect(
+    pointer,
+    client.at[0],
+    client.at[1],
+    client.size[0],
+    client.size[1],
+  );
+  const pillWidth = Math.min(180, client.size[0]);
+  const pillHeight = 20;
+  const insidePill =
+    mode === "passive" &&
+    insideRect(
+      pointer,
+      client.at[0] + (client.size[0] - pillWidth) / 2,
+      client.at[1] + client.size[1] - pillHeight,
+      pillWidth,
+      pillHeight,
+    );
+
+  if (!insidePill) {
+    // Do not steal Super+LMB from the rest of the desktop.
+    if (!insideOverlay) void hyprDispatch(`hl.dsp.window.drag()`);
+    return;
+  }
+
+  if (pillDragTimer) clearInterval(pillDragTimer);
+  drag = {
+    source: "pill",
+    pointerX: pointer.x,
+    pointerY: pointer.y,
+    originX: client.at[0],
+    originY: client.at[1],
+    width: client.size[0],
+    height: client.size[1],
+    monitor,
+    lastX: null,
+    lastY: null,
+    lastTick: 0,
+  };
+  pillDragTimer = setInterval(() => dragTo(), 16);
+}
+
+function endPillDrag() {
+  if (pillDragTimer) clearInterval(pillDragTimer);
+  pillDragTimer = null;
+  if (drag?.source === "pill") drag = null;
+}
+
 /** Finish a drag and re-pick the side if the head crossed the monitor centre. */
 async function endDrag() {
   const active = drag;
+  if (!active || active.source !== "chat") return;
   drag = null;
-  if (!active || mode !== "interactive") return;
+  if (mode !== "interactive") return;
   const client = hyprlandClient();
   const monitor = monitorForClient(client);
   const center = headCenterForClient(client, chatSide);
@@ -1251,6 +1325,12 @@ function handleCommand(raw) {
       break;
     case "mute":
       setMuted(!state.muted);
+      break;
+    case "drag-start":
+      beginPillDrag();
+      break;
+    case "drag-end":
+      endPillDrag();
       break;
     case "forget":
       resetHistory();

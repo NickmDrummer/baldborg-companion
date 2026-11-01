@@ -38,3 +38,16 @@ o.bind("SUPER + SHIFT + V", "Baldborg: hablar (soltar)", baldborg .. " listen st
 -- Start the overlay with the session (single-instance safe).
 o.launch_on_start("__REPO__/bin/baldborg-start")
 o.bind("SUPER + SHIFT + H", "Baldborg: ocultar", baldborg .. " hide")
+
+-- SUPER + LMB on the idle status pill starts a clamped drag. Anywhere else
+-- the normal Omarchy window-drag behaviour is preserved.
+hl.unbind("SUPER + mouse:272")
+hl.bind("SUPER + mouse:272", function()
+  local overlay = hl.get_window("class:baldborg-desktop")
+  if overlay ~= nil then
+    hl.dispatch(hl.dsp.exec_cmd(baldborg .. " drag-start"))
+  else
+    hl.dispatch(hl.dsp.window.drag())
+  end
+end, { mouse = true })
+hl.bind("SUPER + mouse:272", hl.dsp.exec_cmd(baldborg .. " drag-end"), { mouse = true, release = true })

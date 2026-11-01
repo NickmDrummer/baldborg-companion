@@ -175,6 +175,13 @@ body,
   }
 }
 
+.pill-grip {
+  color: var(--holo-dim);
+  font-size: 9px;
+  letter-spacing: -1px;
+  opacity: 0.6;
+}
+
 .dot {
   width: 5px;
   height: 5px;

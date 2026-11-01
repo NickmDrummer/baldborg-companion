@@ -69,6 +69,8 @@ export const TOOL_LABELS: Record<UiLanguage, Record<string, string>> = {
     team_fixtures: "EQUIPO",
     system_status: "SISTEMA",
     get_time: "HORA",
+    epic_free_games: "EPIC",
+    steam_free_games: "STEAM",
   },
   en: {
     get_weather: "WEATHER",
@@ -76,5 +78,7 @@ export const TOOL_LABELS: Record<UiLanguage, Record<string, string>> = {
     team_fixtures: "TEAM",
     system_status: "SYSTEM",
     get_time: "TIME",
+    epic_free_games: "EPIC",
+    steam_free_games: "STEAM",
   },
 };

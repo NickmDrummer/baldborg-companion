@@ -46,12 +46,12 @@
   "avatar": {
     "window": {
       "passive": {
-        "width": 380,
-        "height": 460
+        "width": 208,
+        "height": 222
       },
       "interactive": {
-        "width": 380,
-        "height": 460
+        "width": 568,
+        "height": 222
       }
     },
     "headBox": {
@@ -92,11 +92,11 @@
     ],
     "dailyCap": 6,
     "speak": true,
-    "language": "es",
+    "language": "en",
     "everyMinutes": 30,
     "generator": "model"
   },
   "ui": {
-    "language": "es"
+    "language": "en"
   }
 }

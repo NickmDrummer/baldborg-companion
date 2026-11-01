@@ -11,10 +11,14 @@ import test from "node:test";
 
 import {
   convertUnits,
+  formatEpicSummary,
   formatFixture,
+  formatSteamFreeGames,
   parseConversionQuery,
   parseCurrencyQuery,
   parseIcsEvents,
+  parseSteamFreeKeepPage,
+  parseSteamSearch,
 } from "../apps/desktop/electron/tools.js";
 import {
   epicBeatText,
@@ -292,5 +296,57 @@ test("Epic title diff only reports new games", () => {
   assert.equal(
     epicBeatText(["A", "B"], "en"),
     "New free games on Epic: A, B.",
+  );
+});
+
+test("Epic summary uses quotes and day/month dates", () => {
+  const current = [
+    { title: "Sorry We're Closed", endLabel: "5 nov", endLabelEn: "5 Nov" },
+  ];
+  const upcoming = [
+    { title: "Idle Champions", startLabel: "5 nov", startLabelEn: "5 Nov" },
+    { title: "Flotsam", startLabel: "5 nov", startLabelEn: "5 Nov" },
+  ];
+  assert.equal(
+    formatEpicSummary(current, upcoming, false),
+    'Gratis en Epic ahora: "Sorry We\'re Closed" (hasta 5 nov). Próximamente: "Idle Champions", "Flotsam" (5 nov).',
+  );
+  assert.equal(
+    formatEpicSummary(
+      current.map((game) => ({ ...game, endLabel: game.endLabelEn })),
+      upcoming.map((game) => ({ ...game, startLabel: game.startLabelEn })),
+      true,
+    ),
+    'Free on Epic now: "Sorry We\'re Closed" (Until 5 Nov). Coming soon: "Idle Champions", "Flotsam" (5 Nov).',
+  );
+});
+
+test("Steam free-to-keep parser keeps only limited 100% promotions", () => {
+  const search = parseSteamSearch({
+    results_html:
+      '<a data-ds-appid="1583850"><span class="title">Asleep: Act 1</span><div>-100%</div></a>' +
+      '<a data-ds-appid="123"><span class="title">Free Forever</span></a>',
+  });
+  assert.deepEqual(search.map((game) => game.id), ["1583850"]);
+
+  const paid = parseSteamFreeKeepPage(
+    '&quot;is_free_to_keep&quot;:1,&quot;free_to_keep_ends&quot;:1793642400',
+  );
+  assert.equal(paid.toISOString(), "2026-11-02T18:00:00.000Z");
+  assert.equal(parseSteamFreeKeepPage('&quot;is_free&quot;:1'), null);
+  assert.equal(parseSteamFreeKeepPage('&quot;is_free_to_keep&quot;:1'), null);
+});
+
+test("Steam summary quotes titles and only shows the end date", () => {
+  const games = [
+    { title: "Asleep: Act 1", endLabel: "2 nov", endLabelEn: "2 Nov" },
+  ];
+  assert.equal(
+    formatSteamFreeGames(games, false),
+    'Gratis para reclamar en Steam: "Asleep: Act 1" (hasta 2 nov).',
+  );
+  assert.equal(
+    formatSteamFreeGames(games, true),
+    'Free to keep on Steam: "Asleep: Act 1" (Until 2 Nov).',
   );
 });

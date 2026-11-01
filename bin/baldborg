@@ -51,6 +51,8 @@ const VALID = new Set([
   "hide",
   "quit",
   "capture",
+  "drag-start",
+  "drag-end",
   "doctor",
 ]);
 
