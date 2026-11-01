@@ -3,7 +3,9 @@
 # They are not committed to git because of their size (~340 MB).
 set -euo pipefail
 
-cd "$(dirname "$0")/assets/models"
+ASSETS_DIR="$(cd "$(dirname "$0")" && pwd)/assets/models"
+mkdir -p "$ASSETS_DIR"
+cd "$ASSETS_DIR"
 
 BASE="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
