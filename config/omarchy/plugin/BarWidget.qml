@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Baldborg — bar pill that mirrors the overlay state.
@@ -100,69 +101,76 @@ BarWidget {
     contentWidth: menu.fittedContentWidth(Style.space(210))
     contentHeight: menu.fittedContentHeight(menuColumn.implicitHeight)
 
-    Column {
-      id: menuColumn
+    Rectangle {
       anchors.fill: parent
-      spacing: Style.space(3)
+      radius: Math.max(0, Style.cornerRadius - Style.space(2))
+      color: Commons.Color.background
 
-      Button {
-        width: parent.width
-        leftAlign: true
-        text: root.spanish ? "Abrir chat" : "Open chat"
-        foreground: root.bar.foreground
-        onClicked: {
-          root.menuOpen = false
-          actionProc.fire(["open"])
+      Column {
+        id: menuColumn
+        anchors.fill: parent
+        anchors.margins: Style.space(2)
+        spacing: Style.space(3)
+
+        Button {
+          width: parent.width
+          leftAlign: true
+          text: root.spanish ? "Abrir chat" : "Open chat"
+          foreground: root.bar.foreground
+          onClicked: {
+            root.menuOpen = false
+            actionProc.fire(["open"])
+          }
         }
-      }
 
-      Button {
-        width: parent.width
-        leftAlign: true
-        text: root.phase === "muted"
-          ? (root.spanish ? "Activar voz" : "Unmute voice")
-          : (root.spanish ? "Silenciar voz" : "Mute voice")
-        foreground: root.bar.foreground
-        onClicked: {
-          root.menuOpen = false
-          actionProc.fire(["mute"])
+        Button {
+          width: parent.width
+          leftAlign: true
+          text: root.phase === "muted"
+            ? (root.spanish ? "Activar voz" : "Unmute voice")
+            : (root.spanish ? "Silenciar voz" : "Mute voice")
+          foreground: root.bar.foreground
+          onClicked: {
+            root.menuOpen = false
+            actionProc.fire(["mute"])
+          }
         }
-      }
 
-      Button {
-        width: parent.width
-        leftAlign: true
-        text: root.spanish ? "Olvidar conversación" : "Forget conversation"
-        foreground: root.bar.foreground
-        onClicked: {
-          root.menuOpen = false
-          actionProc.fire(["forget"])
+        Button {
+          width: parent.width
+          leftAlign: true
+          text: root.spanish ? "Olvidar conversación" : "Forget conversation"
+          foreground: root.bar.foreground
+          onClicked: {
+            root.menuOpen = false
+            actionProc.fire(["forget"])
+          }
         }
-      }
 
-      PanelSeparator {
-        foreground: root.bar.foreground
-      }
-
-      Button {
-        width: parent.width
-        leftAlign: true
-        text: root.spanish ? "Ocultar" : "Hide"
-        foreground: root.bar.foreground
-        onClicked: {
-          root.menuOpen = false
-          actionProc.fire(["hide"])
+        PanelSeparator {
+          foreground: root.bar.foreground
         }
-      }
 
-      Button {
-        width: parent.width
-        leftAlign: true
-        text: root.spanish ? "Cerrar Baldborg" : "Quit Baldborg"
-        foreground: root.bar.foreground
-        onClicked: {
-          root.menuOpen = false
-          actionProc.fire(["quit"])
+        Button {
+          width: parent.width
+          leftAlign: true
+          text: root.spanish ? "Ocultar" : "Hide"
+          foreground: root.bar.foreground
+          onClicked: {
+            root.menuOpen = false
+            actionProc.fire(["hide"])
+          }
+        }
+
+        Button {
+          width: parent.width
+          leftAlign: true
+          text: root.spanish ? "Cerrar Baldborg" : "Quit Baldborg"
+          foreground: root.bar.foreground
+          onClicked: {
+            root.menuOpen = false
+            actionProc.fire(["quit"])
+          }
         }
       }
     }
