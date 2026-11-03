@@ -34,7 +34,7 @@ import {
   parseSilentHours,
   parseToggle,
 } from "../apps/desktop/electron/commands.js";
-import { nextIntervalMinutes } from "../apps/desktop/electron/beats.js";
+import { nextIntervalMinutes, resolveBeatLanguage } from "../apps/desktop/electron/beats.js";
 import { BEATS } from "../packages/persona/beats.mjs";
 import { isAcceptableQuip } from "../apps/desktop/electron/quip.js";
 import {
@@ -404,4 +404,12 @@ test("voice language follows the interface, not the message text", () => {
   assert.equal(resolveVoiceLanguage({ ui: { language: "es" } }), "es");
   assert.equal(resolveVoiceLanguage({ ui: { language: "en" }, beats: { language: "es" } }), "en");
   assert.equal(resolveVoiceLanguage({}), "en");
+});
+
+test("beats follow the interface language", () => {
+  assert.equal(resolveBeatLanguage({ ui: { language: "en" } }), "en");
+  assert.equal(resolveBeatLanguage({ ui: { language: "es" } }), "es");
+  assert.equal(resolveBeatLanguage({ ui: { language: "en" }, beats: { language: "es" } }), "en");
+  assert.equal(resolveBeatLanguage({ beats: { language: "es" } }), "es");
+  assert.equal(resolveBeatLanguage({}), "en");
 });

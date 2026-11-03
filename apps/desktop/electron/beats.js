@@ -12,6 +12,7 @@ import { BEATS } from "../../../packages/persona/beats.mjs";
 import { rewriteBeat } from "./beatgen.js";
 import { lastMatch, lastWeather } from "./tools.js";
 import { readConfig } from "./settings.js";
+import { detectLanguage } from "./voice.js";
 
 const STATE_DIR = join(homedir(), ".config", "baldborg");
 const STATE_FILE = join(STATE_DIR, "beats.json");
@@ -26,7 +27,6 @@ const DEFAULTS = {
   silentHours: [23, 8],
   dailyCap: 6,
   speak: true,
-  language: "es",
 };
 
 const LANGUAGES = new Set(["es", "en", "auto"]);
@@ -142,10 +142,21 @@ function nextReminder() {
   }
 }
 
-/** Manual language: UI and beats share `ui.language`. */
-export function resolveLanguage() {
-  const setting = config().language ?? "es";
+/**
+ * Beats follow the interface language. `beats.language` stays as a fallback
+ * for older configs that predate `ui.language`.
+ */
+export function resolveBeatLanguage(raw) {
+  const setting = raw?.ui?.language ?? raw?.beats?.language ?? "en";
   return setting === "en" ? "en" : "es";
+}
+
+export function resolveLanguage() {
+  try {
+    return resolveBeatLanguage(readConfig());
+  } catch {
+    return "en";
+  }
 }
 
 export function setLanguage(code) {
@@ -417,8 +428,13 @@ async function beatFor(ctx, language, forced) {
   const seed = language === "en" ? (beat.textEn?.(ctx) ?? beat.text(ctx)) : beat.text(ctx);
   if (config().generator !== "pool") {
     const rewritten = await rewriteBeat(seed, language, state.recentBeats ?? []);
+    const sameLanguage = Boolean(rewritten) && detectLanguage(rewritten, language) === language;
+    if (rewritten && !sameLanguage) {
+      console.info(`[baldborg] beat language mismatch (${language}), using the seed`);
+    }
     if (
       rewritten &&
+      sameLanguage &&
       (beat.id !== "activity" || mentionsActivity(rewritten, ctx.activity))
     ) {
       if (!forced && !gatesPass()) return null;
