@@ -69,6 +69,21 @@ test("fixture handles a match that is the previous day in Argentina", () => {
   assert.match(match.when, /30/);
 });
 
+test("fixture uses full weekday, month and year", () => {
+  const match = formatFixture(
+    {
+      strEvent: "Atlético Madrid vs Bayern Munich",
+      strLeague: "UEFA Champions League",
+      strTimestamp: "2026-11-03T20:00:00",
+    },
+    ARGENTINA,
+  );
+  assert.match(match.when, /martes/);
+  assert.match(match.when, /noviembre de 2026/);
+  assert.match(match.whenEn, /Tuesday/);
+  assert.match(match.whenEn, /November 2026/);
+});
+
 test("fixture formatting does not invent a time for missing timestamps", () => {
   const match = formatFixture({ strEvent: "Test", dateEvent: "2026-11-01" }, ARGENTINA);
   assert.equal(match.whenIso, null);

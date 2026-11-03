@@ -834,7 +834,13 @@ function prepareReminder(args) {
   if (!when) throw new Error("no pude interpretar la fecha; usá 'in 20 minutes' o '3 Nov 16:30'");
   if (when.getTime() <= Date.now() + 5_000) throw new Error("esa hora ya pasó");
 
-  const language = args.language === "en" ? "en" : "es";
+  const configured = config().ui?.language;
+  const language =
+    args.language === "en" || args.language === "es"
+      ? args.language
+      : configured === "es"
+        ? "es"
+        : "en";
 
   return {
     requiresConfirmation: true,
@@ -895,7 +901,14 @@ function prepareReminder(args) {
         saveReminders(list);
       });
 
-      return { ok: true, scheduledFor: when.toISOString(), summary: formatWhen(when, language) };
+      // Local time only: the model should never see or mention a UTC timestamp.
+      const scheduledFor = formatWhen(when, language);
+      return {
+        ok: true,
+        scheduledFor,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        summary: scheduledFor,
+      };
     },
   };
 }
@@ -909,9 +922,10 @@ function prepareReminder(args) {
 export function formatFixture(event, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   const date = event.strTimestamp ? new Date(`${event.strTimestamp}Z`) : null;
   const options = {
-    weekday: "short",
+    weekday: "long",
     day: "numeric",
-    month: "short",
+    month: "long",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -947,12 +961,21 @@ async function teamFixtures(teamArg) {
     ),
   ]);
 
-  const upcoming = (next.events ?? []).slice(0, 3).map((event) => formatFixture(event));
-  const previous = (last.results ?? []).slice(0, 1).map((event) => formatFixture(event));
+  const formattedUpcoming = (next.events ?? []).slice(0, 3).map((event) => formatFixture(event));
+  const formattedPrevious = (last.results ?? []).slice(0, 1).map((event) => formatFixture(event));
 
-  if (upcoming[0]) {
-    matchCache = { event: upcoming[0].event, when: upcoming[0].whenIso, at: Date.now() };
+  if (formattedUpcoming[0]) {
+    matchCache = {
+      event: formattedUpcoming[0].event,
+      when: formattedUpcoming[0].whenIso,
+      at: Date.now(),
+    };
   }
+
+  // The model only needs the local strings; a raw UTC timestamp makes it
+  // narrate both 20:00Z and 17:00 local in the same reply.
+  const upcoming = formattedUpcoming.map(({ whenIso, ...rest }) => rest);
+  const previous = formattedPrevious.map(({ whenIso, ...rest }) => rest);
 
   const parts = [];
   if (upcoming.length) {

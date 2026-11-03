@@ -14,6 +14,7 @@ import { parseMood, SYSTEM_PROMPT } from "../../../packages/persona/baldborg.mjs
 import {
   configuredCity,
   configuredTeam,
+  lastMatch,
   listPendingReminders,
   parseConversionQuery,
   parseCurrencyQuery,
@@ -115,6 +116,7 @@ function clockContext(language = "en") {
   return (
     `Runtime context: it is ${time} on ${day} (${zone}) on the client's workstation. ` +
     "Use this full date, including the year, when scheduling reminders. " +
+    "When confirming a reminder, quote the local date and time from the tool result; never mention UTC or ISO timestamps. " +
     "Weather, reminders, clock, workstation status, the client's football team, dollar and currency rates, " +
     "unit conversion, the local calendar, Epic free games and Steam free-to-keep games are available through tools. " +
     "Do not repeat phrases or closings you have already used in this conversation."
@@ -213,7 +215,17 @@ function routeReminder(raw) {
   if (!REMINDER_TRIGGER.test(raw)) return null;
 
   const parsed = parseReminderWhen(raw);
-  if (!parsed) return null;
+  if (!parsed) {
+    // "Set a reminder for the match" carries no date: use the fixtures the
+    // app already fetched instead of letting the model guess UTC/local times.
+    if (/\b(match|partido|game|bayern|team|equipo)\b/i.test(raw)) {
+      const match = lastMatch();
+      if (match && new Date(match.when).getTime() > Date.now() + 5_000) {
+        return { text: match.event, when: new Date(match.when), language: detectLanguage(raw) };
+      }
+    }
+    return null;
+  }
 
   let text = raw;
   for (const span of [...parsed.spans].sort((a, b) => b.start - a.start)) {
@@ -957,7 +969,9 @@ export async function startChat(text, sink, modelOverride, languageOverride) {
     const reminderIntent =
       /(recu[eé]rdame|recordarme|recordatorio|remind me|set(?:e)? (?:me )?a reminder)/i.test(text);
     const claimsDone =
-      /\b(programad[oa]|anotad[oa]|guardad[oa]|scheduled|noted|created|set up)\b/i.test(parsed.text);
+      /\b(programad[oa]|anotad[oa]|guardad[oa]|scheduled|noted|created|set up|is set|set for|will be set|will remind)\b/i.test(
+        parsed.text,
+      );
     if (reminderIntent && !reminderToolRan && claimsDone) {
       finalText =
         expected === "en"
