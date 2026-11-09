@@ -1567,7 +1567,7 @@ function parseRrule(value) {
   return rule;
 }
 
-function expandEvent(event, windowEnd) {
+function expandEvent(event, windowEnd, windowStart) {
   const occurrences = [];
   const duration = event.end ? Math.max(0, event.end.getTime() - event.start.getTime()) : 0;
   const rule = event.rrule;
@@ -1582,14 +1582,14 @@ function expandEvent(event, windowEnd) {
   const frequency = String(rule.FREQ ?? "").toUpperCase();
   let current = new Date(event.start);
   let index = 0;
+  const from = windowStart.getTime();
 
   // Skip ahead for daily and weekly rules so a calendar from 2020 does not
-  // burn the iteration budget before reaching this week.
+  // burn the iteration budget before reaching the start of the window.
   if (!count && (frequency === "DAILY" || frequency === "WEEKLY")) {
     const step = (frequency === "DAILY" ? 86_400_000 : 604_800_000) * interval;
     const start = event.start.getTime();
-    const now = Date.now();
-    const skip = Math.max(0, Math.floor((now - start) / step));
+    const skip = Math.max(0, Math.floor((from - start) / step));
     index = skip;
     current = new Date(start + skip * step);
   }
@@ -1598,7 +1598,7 @@ function expandEvent(event, windowEnd) {
     if (count !== null && index >= count) break;
     if (until && current > until) break;
     if (current > windowEnd) break;
-    if (current.getTime() + duration >= Date.now() - 3_600_000) {
+    if (current.getTime() + duration >= from - 3_600_000) {
       occurrences.push({ ...event, start: new Date(current), end: new Date(current.getTime() + duration) });
     }
     index += 1;
@@ -1611,7 +1611,11 @@ function expandEvent(event, windowEnd) {
   return occurrences;
 }
 
-export function parseIcsEvents(text, windowEnd = new Date(Date.now() + 7 * 86_400_000)) {
+export function parseIcsEvents(
+  text,
+  windowEnd = new Date(Date.now() + 7 * 86_400_000),
+  windowStart = new Date(),
+) {
   const events = [];
   let current = null;
 
@@ -1622,7 +1626,7 @@ export function parseIcsEvents(text, windowEnd = new Date(Date.now() + 7 * 86_40
     }
     if (line === "END:VEVENT") {
       if (current?.start) {
-        for (const occurrence of expandEvent(current, windowEnd)) events.push(occurrence);
+        for (const occurrence of expandEvent(current, windowEnd, windowStart)) events.push(occurrence);
       }
       current = null;
       continue;

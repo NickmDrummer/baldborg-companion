@@ -323,7 +323,13 @@ test("ics parser reads all-day and recurring events", () => {
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\n");
-  const events = parseIcsEvents(ics, new Date("2026-11-30T23:59:59Z"));
+  // An explicit window start keeps this deterministic: the fixture expects four
+  // Thursdays between the start of November and the end of the month.
+  const events = parseIcsEvents(
+    ics,
+    new Date("2026-11-30T23:59:59Z"),
+    new Date("2026-11-01T00:00:00Z"),
+  );
   const dentist = events.find((event) => event.title === "Dentist");
   assert.equal(dentist.allDay, true);
   assert.equal(dentist.location, "Centro");
