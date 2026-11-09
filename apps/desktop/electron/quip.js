@@ -237,7 +237,7 @@ async function generate(prompt) {
         messages: [{ role: "user", content: prompt }],
         stream: false,
         keep_alive: keepAlive,
-        options: { temperature: 0.85, top_p: 0.9, num_predict: 56, num_ctx: 8192 },
+        options: { temperature: 0.85, top_p: 0.9, num_predict: 56, num_ctx: numCtx ?? 8192 },
       }),
     });
     if (!response.ok) {
