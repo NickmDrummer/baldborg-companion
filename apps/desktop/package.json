@@ -1,6 +1,6 @@
 {
   "name": "baldborg-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Holographic Baldborg companion overlay for the Linux desktop",
   "main": "electron/main.js",
